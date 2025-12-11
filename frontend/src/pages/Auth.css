@@ -1,0 +1,207 @@
+/* frontend/src/pages/Auth.css */
+
+/* 1. Global Reset for Auth to ensure perfect sizing */
+.auth-container * {
+  box-sizing: border-box;
+}
+
+/* 2. Page Background & Centering */
+.auth-container {
+  min-height: calc(100vh - 80px); /* Full height minus Navbar */
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 40px 20px;
+  background: #f8f9fa; /* Clean, professional background */
+}
+
+/* 3. The Login Card */
+.auth-card {
+  width: 100%;
+  max-width: 440px; /* Optimal reading width */
+  background: #ffffff;
+  padding: 40px;
+  border-radius: 24px;
+  /* Deep, soft shadow for "floating" effect */
+  box-shadow: 0 20px 40px rgba(0, 0, 0, 0.08); 
+  border: 1px solid rgba(0,0,0,0.02);
+  animation: slideUp 0.4s ease-out forwards;
+}
+
+@keyframes slideUp {
+  from { opacity: 0; transform: translateY(20px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+/* 4. Typography */
+.auth-header {
+  text-align: center;
+  margin-bottom: 32px;
+}
+
+.auth-header h2 {
+  font-size: 1.8rem;
+  color: #1a1a1a;
+  margin-bottom: 8px;
+  font-weight: 800;
+  letter-spacing: -0.5px;
+}
+
+.auth-header p {
+  color: #666;
+  font-size: 0.95rem;
+}
+
+/* 5. Role Switcher (Tabs) */
+.role-switcher {
+  display: flex;
+  background: #f1f3f5;
+  padding: 5px;
+  border-radius: 14px;
+  margin-bottom: 24px;
+}
+
+.role-tab {
+  flex: 1;
+  text-align: center;
+  padding: 10px;
+  cursor: pointer;
+  font-size: 0.9rem;
+  font-weight: 600;
+  color: #666;
+  border-radius: 10px;
+  transition: all 0.2s ease;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+}
+
+.role-tab.active {
+  background: #ffffff;
+  color: var(--primary-color);
+  box-shadow: 0 2px 8px rgba(0,0,0,0.05);
+}
+
+/* 6. Input Fields (The "Well-Fitted" Fix) */
+.input-group {
+  position: relative;
+  margin-bottom: 16px;
+  width: 100%; /* Forces it to fill container */
+}
+
+.input-icon {
+  position: absolute;
+  left: 18px;
+  top: 50%;
+  transform: translateY(-50%);
+  color: #adb5bd;
+  pointer-events: none; /* Clicks pass through to input */
+  z-index: 2;
+}
+
+.auth-input {
+  width: 100%; /* Critical for alignment */
+  padding: 15px 15px 15px 50px; /* Left padding makes room for icon */
+  font-size: 1rem;
+  color: #333;
+  background: #f8f9fa;
+  border: 2px solid transparent;
+  border-radius: 14px;
+  transition: all 0.2s ease;
+  outline: none;
+}
+
+.auth-input:focus {
+  background: #ffffff;
+  border-color: var(--primary-color);
+  box-shadow: 0 0 0 4px rgba(118, 176, 65, 0.15); /* Soft Green Glow */
+}
+
+.auth-input::placeholder {
+  color: #adb5bd;
+}
+
+/* 7. Buttons */
+.auth-btn {
+  width: 100%;
+  padding: 15px;
+  background: var(--primary-color);
+  color: white;
+  border: none;
+  border-radius: 14px;
+  font-size: 1rem;
+  font-weight: 700;
+  cursor: pointer;
+  margin-top: 10px;
+  transition: transform 0.1s, box-shadow 0.2s;
+}
+
+.auth-btn:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 8px 20px rgba(118, 176, 65, 0.3);
+}
+
+/* 8. Google Button */
+.google-btn {
+  width: 100%;
+  padding: 14px;
+  background: #ffffff;
+  color: #3c4043;
+  border: 1px solid #e0e0e0;
+  border-radius: 14px;
+  font-size: 0.95rem;
+  font-weight: 600;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  margin-top: 16px;
+  transition: all 0.2s;
+}
+
+.google-btn:hover {
+  background-color: #f8f9fa;
+  border-color: #d2e3fc;
+}
+
+.or-divider {
+  text-align: center;
+  margin: 20px 0;
+  color: #adb5bd;
+  font-size: 0.85rem;
+  font-weight: 600;
+  position: relative;
+}
+
+.or-divider::before,
+.or-divider::after {
+  content: "";
+  position: absolute;
+  top: 50%;
+  width: 40%;
+  height: 1px;
+  background: #eee;
+}
+
+.or-divider::before { left: 0; }
+.or-divider::after { right: 0; }
+
+.auth-footer {
+  margin-top: 25px;
+  text-align: center;
+  font-size: 0.9rem;
+  color: #666;
+}
+
+.auth-link {
+  color: var(--primary-color);
+  font-weight: 700;
+  text-decoration: none;
+  margin-left: 5px;
+}
+
+.auth-link:hover {
+  text-decoration: underline;
+}

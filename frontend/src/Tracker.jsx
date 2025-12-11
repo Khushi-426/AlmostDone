@@ -5,6 +5,7 @@ import {
   ChevronRight, Activity, AlertCircle, Play, Dumbbell 
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
+import { useAuth } from './context/AuthContext'; // IMPORT AUTH CONTEXT
 
 // --- MOCK DATA: EXERCISE LIBRARY ---
 const EXERCISES = [
@@ -23,7 +24,6 @@ const EXERCISES = [
       "Lower slowly to starting position.",
       "Avoid swinging your body."
     ],
-    // Color for the icon background
     color: '#E8F5E9',
     iconColor: '#2C5D31'
   },
@@ -35,7 +35,12 @@ const EXERCISES = [
     difficulty: 'Intermediate',
     recommended: false,
     description: 'Overhead press to improve shoulder mobility and strength.',
-    instructions: [],
+    instructions: [
+        "Hold weights at shoulder level with palms facing forward.",
+        "Push weights up until arms are fully extended.",
+        "Lower back down slowly to the starting position.",
+        "Keep your back straight throughout."
+    ],
     color: '#FFF3E0',
     iconColor: '#EF6C00'
   }
@@ -43,6 +48,7 @@ const EXERCISES = [
 
 const Tracker = () => {
   const navigate = useNavigate();
+  const { user } = useAuth(); // GET USER INFO
   
   // --- STATES ---
   // Flow: LIBRARY -> DEMO -> SESSION
@@ -80,8 +86,13 @@ const Tracker = () => {
 
   const stopSession = async () => {
     try {
-        await fetch('http://localhost:5000/stop_tracking');
-    } catch(e) { console.error(e) }
+        // Send POST request with User Email to save data
+        await fetch('http://localhost:5000/stop_tracking', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ email: user?.email }) 
+        });
+    } catch(e) { console.error("Error stopping session:", e) }
     
     setActive(false);
     clearInterval(intervalRef.current);
@@ -241,8 +252,17 @@ const Tracker = () => {
         </div>
 
         <div style={{ marginTop: 'auto' }}>
+            {/* UPDATED START BUTTON WITH AUTH CHECK */}
             <button 
-                onClick={() => { setViewMode('SESSION'); startSession(); }}
+                onClick={() => { 
+                    if (!user) {
+                        alert("You must be logged in to start a training session.");
+                        navigate('/auth/login');
+                        return;
+                    }
+                    setViewMode('SESSION'); 
+                    startSession(); 
+                }}
                 style={{ 
                     width: '100%', padding: '18px', borderRadius: '50px', border: 'none',
                     background: 'linear-gradient(135deg, #1A3C34 0%, #2C5D31 100%)', 
@@ -260,9 +280,6 @@ const Tracker = () => {
 
       {/* Right: Demo Video */}
       <div style={{ flex: 1, background: '#000', position: 'relative', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-          {/* IMPORTANT: Ensure you have a 'bicep_demo.mp4' file in your 
-            frontend/public/ folder. 
-          */}
           <video 
             src="/bicep_demo.mp4" 
             controls 
