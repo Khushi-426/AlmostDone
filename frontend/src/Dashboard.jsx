@@ -3,7 +3,7 @@ import { Canvas, useFrame } from '@react-three/fiber';
 import { Float, Icosahedron, MeshDistortMaterial, Environment, Sphere } from '@react-three/drei';
 import { motion } from 'framer-motion';
 import { useNavigate } from 'react-router-dom';
-import { Activity, Shield, Zap, Eye, CheckCircle, ArrowRight, Lock } from 'lucide-react';
+import { Activity, Shield, Zap, Eye, ArrowRight, Lock } from 'lucide-react';
 
 // --- 3D Hero Element ---
 const HeroGraphic = () => {
@@ -109,26 +109,17 @@ const Dashboard = () => {
                 </p>
                 
                 <div style={{ display: 'flex', gap: '20px' }}>
+                    {/* UPDATED: Removed "Login" button, repurposed "Create Account" to "Start Recovery" -> /track */}
                     <button 
-                        onClick={() => navigate('/auth/login')}
+                        onClick={() => navigate('/track')}
                         style={{ 
                             padding: '16px 40px', borderRadius: '50px', border: 'none', 
                             background: '#2C5D31', color: '#fff', fontSize: '1.1rem', fontWeight: '700',
                             cursor: 'pointer', boxShadow: '0 10px 25px rgba(44, 93, 49, 0.3)',
-                            transition: 'all 0.2s'
+                            transition: 'all 0.2s', display: 'flex', alignItems: 'center', gap: '10px'
                         }}
                     >
-                        Login
-                    </button>
-                    <button 
-                         onClick={() => navigate('/auth/signup')}
-                        style={{ 
-                            padding: '16px 40px', borderRadius: '50px', border: '2px solid #2C5D31', 
-                            background: 'transparent', color: '#2C5D31', fontSize: '1.1rem', fontWeight: '700',
-                            cursor: 'pointer'
-                        }}
-                    >
-                        Create Account
+                        Start Recovery <ArrowRight size={20} />
                     </button>
                 </div>
             </motion.div>
@@ -233,15 +224,16 @@ const Dashboard = () => {
             <p style={{ fontSize: '1.2rem', opacity: 0.9, maxWidth: '600px', margin: '0 auto 40px auto' }}>
                 Join thousands of users trusting PhysioCheck for safe, effective, and smart rehabilitation.
             </p>
+            {/* UPDATED: Direct Link to Tracker */}
             <button 
-                onClick={() => navigate('/auth/signup')}
+                onClick={() => navigate('/track')}
                 style={{ 
                     padding: '18px 45px', borderRadius: '50px', border: 'none', 
                     background: '#fff', color: '#1A3C34', fontSize: '1.1rem', fontWeight: '800',
                     cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: '10px'
                 }}
             >
-                Create Free Account <ArrowRight size={20} />
+                Start Recovery <ArrowRight size={20} />
             </button>
         </div>
       </section>
