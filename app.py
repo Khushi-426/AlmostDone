@@ -1,3 +1,7 @@
+"""
+Flask application with API routes
+"""
+from flask import Flask, Response, jsonify
 import cv2
 import mediapipe as mp
 import numpy as np
@@ -62,6 +66,24 @@ except Exception as e:
     otp_collection = None
     sessions_collection = None
 
+# Global session instance
+workout_session = None
+
+def init_session():
+    """Initialize workout session"""
+    global workout_session
+    from workout_session import WorkoutSession
+    workout_session = WorkoutSession()
+
+def generate_video_frames():
+    """Generator for video streaming"""
+    from constants import WorkoutPhase
+    
+    while workout_session.phase != WorkoutPhase.INACTIVE:
+        frame, should_continue = workout_session.process_frame()
+        
+        if not should_continue or frame is None:
+            break
 # --- 3. MEDIA PIPE SETUP ---
 mp_holistic = mp.solutions.holistic
 mp_drawing = mp.solutions.drawing_utils
@@ -349,9 +371,24 @@ def gen_frames():
         if countdown_running:
              cv2.putText(image, str(global_tracking_data['remaining']), (int(w/2)-50, int(h/2)), cv2.FONT_HERSHEY_SIMPLEX, 5, (0,0,255), 5)
         
-        ret, buffer = cv2.imencode('.jpg', image)
-        yield (b'--frame\r\n' b'Content-Type: image/jpeg\r\n\r\n' + buffer.tobytes() + b'\r\n')
+        ret, buffer = cv2.imencode('.jpg', frame)
+        if ret:
+            yield (b'--frame\r\n'
+                   b'Content-Type: image/jpeg\r\n\r\n' + buffer.tobytes() + b'\r\n')
 
+@app.route('/start_tracking')
+def start_tracking():
+    """Start new workout session"""
+    from constants import WorkoutPhase
+    
+    if workout_session and workout_session.phase != WorkoutPhase.INACTIVE:
+        return jsonify({'status': 'already_active'}), 400
+    
+    try:
+        if workout_session is None:
+            init_session()
+        workout_session.start()
+        return jsonify({'status': 'success', 'message': 'Calibration started'})
 # --- 9. TRACKING CONTROL ROUTES ---
 @app.route('/start_tracking')
 def start_tracking():
@@ -378,6 +415,9 @@ def start_tracking():
 
 @app.route('/stop_tracking', methods=['POST'])
 def stop_tracking():
+    """Stop current workout session"""
+    if workout_session:
+        workout_session.stop()
     global cap, holistic_model, is_tracking_active, final_report_summary
     
     data = request.json
@@ -417,15 +457,25 @@ def stop_tracking():
 
 @app.route('/video_feed')
 def video_feed():
-    return Response(gen_frames(), mimetype='multipart/x-mixed-replace; boundary=frame')
+    """Stream video frames"""
+    return Response(generate_video_frames(), 
+                   mimetype='multipart/x-mixed-replace; boundary=frame')
 
 @app.route('/data_feed')
 def data_feed():
-    return jsonify(global_tracking_data)
+    """Get current workout state"""
+    if workout_session:
+        return jsonify(workout_session.get_state_dict())
+    return jsonify({'status': 'INACTIVE'})
 
 @app.route('/report_data')
 def report_data():
-    return jsonify(final_report_summary)
+    """Get final session report"""
+    if workout_session:
+        return jsonify(workout_session.get_final_report())
+    return jsonify({'error': 'No session data available'})
 
 if __name__ == '__main__':
+    import cv2  # Import here for app.py
+    init_session()
     app.run(host='0.0.0.0', port=5000, debug=True)
