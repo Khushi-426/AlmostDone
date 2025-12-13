@@ -37,9 +37,11 @@ class WorkoutSession:
         
         calibration_data = CalibrationData()
         self.calibration_manager = CalibrationManager(
-            self.pose_processor, calibration_data, 
-            CALIBRATION_HOLD_TIME, SAFETY_MARGIN
+            self.pose_processor,
+            calibration_data,
+            CALIBRATION_HOLD_TIME
         )
+
         
         self.rep_counter = RepCounter(calibration_data, MIN_REP_DURATION)
         self.history = SessionHistory()

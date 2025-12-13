@@ -39,10 +39,11 @@ class PoseProcessor:
                     landmarks[config['wrist']].y]
             
             # Check landmark visibility
-            if (landmarks[config['shoulder']].visibility < 0.5 or
-                landmarks[config['elbow']].visibility < 0.5 or
-                landmarks[config['wrist']].visibility < 0.5):
+            if (landmarks[config['shoulder']].visibility < 0.6 or
+                landmarks[config['elbow']].visibility < 0.6 or
+                landmarks[config['wrist']].visibility < 0.6):
                 return None
+
             
             raw_angle = self.angle_calculator.calculate_angle(shoulder, elbow, wrist)
             return self.angle_calculator.get_smoothed_angle(arm, raw_angle)

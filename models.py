@@ -1,5 +1,5 @@
 """
-Data classes for state management
+Data classes for state management - FIXED
 """
 from dataclasses import dataclass, field
 from typing import Dict, List
@@ -16,6 +16,7 @@ class ArmMetrics:
     curr_rep_time: float = 0.0
     feedback: str = ""
     last_down_time: float = field(default_factory=time.time)
+    stage_start_time: float = field(default_factory=time.time)  # ADDED: Missing field
     
     def to_dict(self) -> dict:
         return {

@@ -15,12 +15,18 @@ class CalibrationPhase(Enum):
     COMPLETE = "COMPLETE"
 
 class ArmStage(Enum):
-    UP = "UP"
-    DOWN = "DOWN"
-    LOST = "LOST"
+    # Core states (fully reached peaks)
+    UP = "UP"           # Fully contracted (peak of curl)
+    DOWN = "DOWN"         # Fully extended (bottom of movement)
+    LOST = "LOST"         # Pose tracking lost
+    
+    # ENHANCEMENT: New transitional stages for granular rep counting logic (Used in rep_counter.py)
+    MOVING_UP = "MOVING_UP"   # Arm is contracting (curling up)
+    MOVING_DOWN = "MOVING_DOWN" # Arm is extending (going down)
 
 # Calibration settings
-CALIBRATION_HOLD_TIME = 10  # seconds
+# ENHANCEMENT: Increased hold time for better calibration data stability
+CALIBRATION_HOLD_TIME = 5   # seconds (Increased from 3/10 for robust sampling)
 WORKOUT_COUNTDOWN_TIME = 5  # seconds
 
 # Angle processing
@@ -32,7 +38,8 @@ MIN_DETECTION_CONFIDENCE = 0.7
 MIN_TRACKING_CONFIDENCE = 0.7
 
 # Rep validation
-MIN_REP_DURATION = 0.5  # seconds - prevents false counts
+# ENHANCEMENT: Increased min rep duration to enforce controlled movement (physio/rehab focus)
+MIN_REP_DURATION = 0.6  # seconds - prevents false counts and forces control
 
 # Default thresholds (overridden by calibration)
 DEFAULT_CONTRACTED_THRESHOLD = 50
