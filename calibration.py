@@ -1,181 +1,128 @@
 """
-Calibration logic and threshold calculation - ENHANCED
+Calibration logic: Dynamically determines ROM thresholds
 """
-import numpy as np
-from typing import List
 import time
+from typing import TYPE_CHECKING
+from constants import CalibrationPhase, ExerciseConfig
+
+if TYPE_CHECKING:
+    from pose_processor import PoseProcessor
+    from models import CalibrationData
 
 class CalibrationManager:
-    """Manages the calibration process"""
-    
-    def __init__(self, pose_processor, calibration_data, 
-                 hold_time: float = 5, safety_margin: int = 10):
+    def __init__(self, pose_processor, data: 'CalibrationData', hold_time: int, safety_margin: int):
         self.pose_processor = pose_processor
-        self.data = calibration_data
+        self.data = data
         self.hold_time = hold_time
         self.safety_margin = safety_margin
         
-        # ADDED: Minimum samples required for valid calibration
-        self.min_samples = 20
-    
+        # <<< NEW: Store the ExerciseConfig and Joint Name for dynamic messaging and logic >>>
+        self.exercise_config: ExerciseConfig = pose_processor.config
+        # Use .title() to capitalize the joint name (e.g., "ELBOW" -> "Elbow")
+        self.joint_name = self.exercise_config.joint_to_track.value.title()
+        self.exercise_name = self.exercise_config.name
+
+        self.start_time = 0.0
+        self.min_angle = 360  # Start with max possible angle
+        self.max_angle = 0    # Start with min possible angle
+
     def start(self):
-        """Initialize calibration"""
-        from constants import CalibrationPhase
-        
-        self.data.reset()
         self.data.active = True
         self.data.phase = CalibrationPhase.EXTEND
-        self.data.phase_start_time = time.time()
-        self.data.message = "EXTEND BOTH ARMS FULLY - HOLD STEADY"
-    
+        # Use dynamic joint and hold time in the message
+        self.data.message = f"CALIBRATION: Fully EXTEND your {self.joint_name} joint for {self.hold_time} seconds."
+        self.data.progress = 0
+        self.start_time = time.time()
+        self.min_angle = 360
+        self.max_angle = 0
+        print(f"Starting calibration for: {self.exercise_name} (Joint: {self.joint_name})")
+
     def process_frame(self, results, current_time: float) -> bool:
         """
-        Process calibration frame
-        Returns: True if calibration complete, False otherwise
+        Processes a single frame for calibration.
+        Returns True if calibration is complete.
         """
-        from constants import CalibrationPhase
-        
         if not self.data.active:
-            return True
-        
-        # Check for pose detection
-        if not results.pose_landmarks:
-            self.data.message = "STAND IN FRAME - BODY NOT DETECTED"
             return False
-        
-        # Update progress
-        elapsed = current_time - self.data.phase_start_time
-        self.data.progress = min(int((elapsed / self.hold_time) * 100), 100)
-        
-        # Collect angle measurements
+
+        # Get angles for the joint specified in the current exercise config
         angles = self.pose_processor.get_both_arm_angles(results)
         
-        # Track if both arms are visible
-        both_visible = True
+        # Calibration relies on consistent movement from either or both tracked sides
+        right_angle = angles.get('RIGHT')
+        left_angle = angles.get('LEFT')
         
-        for arm in ['RIGHT', 'LEFT']:
-            if angles[arm] is not None:
-                if self.data.phase == CalibrationPhase.EXTEND:
-                    self.data.extended_angles[arm].append(angles[arm])
-                elif self.data.phase == CalibrationPhase.CONTRACT:
-                    self.data.contracted_angles[arm].append(angles[arm])
+        valid_angles = [a for a in [right_angle, left_angle] if a is not None]
+
+        # Check for valid angles (only proceed if tracking is reliable)
+        if not valid_angles:
+            self.data.message = f"CALIBRATION: Please ensure your {self.joint_name} joint is visible."
+            self.data.progress = 0
+            self.start_time = current_time # Reset timer if pose is lost
+            return False
+            
+        current_angle = sum(valid_angles) / len(valid_angles)
+        
+        # Update min/max angles based on motion
+        self.min_angle = min(self.min_angle, current_angle)
+        self.max_angle = max(self.max_angle, current_angle)
+        
+        elapsed_time = current_time - self.start_time
+        
+        if self.data.phase == CalibrationPhase.EXTEND:
+            # Check if the user is holding the extended position (high angle)
+            # Check if the current angle is close to the max angle found so far (within 5 degrees)
+            if current_angle > (self.max_angle - 5) or elapsed_time < 0.5:
+                self.data.progress = int((elapsed_time / self.hold_time) * 100)
+                self.data.message = f"CALIBRATION: Hold EXTENDED {self.joint_name} position. ({self.hold_time - int(elapsed_time)}s left)"
             else:
-                both_visible = False
+                # Movement detected, reset timer
+                self.start_time = current_time
+                self.data.message = f"CALIBRATION: Please hold EXTENDED {self.joint_name} position steady."
+                self.data.progress = 0
+
+            if elapsed_time >= self.hold_time:
+                # Transition to CONTRACT phase
+                self.data.extended_threshold = int(self.max_angle)
+                self.data.phase = CalibrationPhase.CONTRACT
+                self.start_time = current_time
+                self.data.progress = 0
+                self.data.message = f"CALIBRATION: Great! Now Fully CONTRACT your {self.joint_name} joint for {self.hold_time} seconds."
+                self.min_angle = 360 # Reset min angle for next phase
+                self.max_angle = 0 # Reset max angle for next phase
         
-        # Update message based on visibility
-        if not both_visible:
-            if self.data.phase == CalibrationPhase.EXTEND:
-                self.data.message = "EXTEND BOTH ARMS - KEEP ARMS VISIBLE"
+        elif self.data.phase == CalibrationPhase.CONTRACT:
+            # Check if the user is holding the contracted position (low angle)
+            # Check if the current angle is close to the min angle found so far (within 5 degrees)
+            if current_angle < (self.min_angle + 5) or elapsed_time < 0.5:
+                self.data.progress = int((elapsed_time / self.hold_time) * 100)
+                self.data.message = f"CALIBRATION: Hold CONTRACTED {self.joint_name} position. ({self.hold_time - int(elapsed_time)}s left)"
             else:
-                self.data.message = "CURL BOTH ARMS - KEEP ARMS VISIBLE"
-        else:
-            if self.data.phase == CalibrationPhase.EXTEND:
-                self.data.message = "EXTEND BOTH ARMS FULLY - HOLD STEADY"
-            else:
-                self.data.message = "CURL BOTH ARMS COMPLETELY - HOLD STEADY"
-        
-        # Check for phase transition
-        if elapsed >= self.hold_time:
-            # Verify we have enough samples
-            if self.data.phase == CalibrationPhase.EXTEND:
-                samples_ok = (len(self.data.extended_angles['RIGHT']) >= self.min_samples and 
-                            len(self.data.extended_angles['LEFT']) >= self.min_samples)
-                if samples_ok:
-                    self._transition_to_contract(current_time)
-                else:
-                    # Not enough data, extend the phase
-                    self.data.phase_start_time = current_time
-                    self.data.message = "HOLD POSITION LONGER - KEEP ARMS VISIBLE"
-                    
-            elif self.data.phase == CalibrationPhase.CONTRACT:
-                samples_ok = (len(self.data.contracted_angles['RIGHT']) >= self.min_samples and 
-                            len(self.data.contracted_angles['LEFT']) >= self.min_samples)
-                if samples_ok:
-                    self._finalize_calibration()
-                    return True
-                else:
-                    # Not enough data, extend the phase
-                    self.data.phase_start_time = current_time
-                    self.data.message = "HOLD POSITION LONGER - KEEP ARMS VISIBLE"
-        
+                # Movement detected, reset timer
+                self.start_time = current_time
+                self.data.message = f"CALIBRATION: Please hold CONTRACTED {self.joint_name} position steady."
+                self.data.progress = 0
+
+            if elapsed_time >= self.hold_time:
+                # Calibration Complete
+                self.data.contracted_threshold = int(self.min_angle)
+                self._finalize_calibration()
+                return True
+                
         return False
-    
-    def _transition_to_contract(self, current_time: float):
-        """Move to contraction phase"""
-        from constants import CalibrationPhase
-        
-        self.data.phase = CalibrationPhase.CONTRACT
-        self.data.phase_start_time = current_time
-        self.data.message = "CURL BOTH ARMS COMPLETELY - HOLD STEADY"
-        self.data.progress = 0
-    
+
     def _finalize_calibration(self):
-        """Calculate final thresholds with enhanced accuracy"""
-        # Calculate robust averages
-        right_ext = self._calculate_robust_average(self.data.extended_angles['RIGHT'])
-        left_ext = self._calculate_robust_average(self.data.extended_angles['LEFT'])
-        right_con = self._calculate_robust_average(self.data.contracted_angles['RIGHT'])
-        left_con = self._calculate_robust_average(self.data.contracted_angles['LEFT'])
-
-        # ENHANCED: Use more conservative thresholds
-        # Extended threshold: slightly less than most extended (ensures full extension)
-        self.data.extended_threshold = int(min(right_ext, left_ext) - 8)
-        
-        # Contracted threshold: slightly more than most contracted (ensures full contraction)
-        self.data.contracted_threshold = int(max(right_con, left_con) + 8)
-
-        # Safety ranges with larger margins
-        self.data.safe_angle_min = max(15, self.data.contracted_threshold - 15)
-        self.data.safe_angle_max = min(175, self.data.extended_threshold + 15)
-
-        # Validate thresholds make sense
-        if self.data.extended_threshold - self.data.contracted_threshold < 40:
-            # Range too small, use defaults with warning
-            self.data.contracted_threshold = 50
-            self.data.extended_threshold = 160
-            self.data.safe_angle_min = 30
-            self.data.safe_angle_max = 175
-            self.data.message = "CALIBRATION WARNING: Using default ranges"
+        """Calculates final thresholds and completes calibration."""
+        self.data.safe_angle_min = max(20, self.data.contracted_threshold - self.safety_margin)
+        self.data.safe_angle_max = min(175, self.data.extended_threshold + self.safety_margin)
 
         self.data.active = False
-        self.data.message = "CALIBRATION COMPLETE"
+        self.data.phase = CalibrationPhase.COMPLETE
+        # Use dynamic exercise name in the final message
+        self.data.message = f"{self.exercise_name} Calibration Complete. Start Workout!"
+        self.data.progress = 100
+        print(f"Calibration Finalized for {self.exercise_name}: Contracted={self.data.contracted_threshold}, Extended={self.data.extended_threshold}")
 
-    @staticmethod
-    def _calculate_robust_average(values: List[float]) -> float:
-        """Calculate average removing outliers using IQR method"""
-        if not values:
-            return 0
-        if len(values) < 3:
-            return np.mean(values)
-        
-        # Use interquartile range to remove outliers
-        q1, q3 = np.percentile(values, [25, 75])
-        iqr = q3 - q1
-        lower_bound = q1 - 1.5 * iqr
-        upper_bound = q3 + 1.5 * iqr
-        
-        filtered = [v for v in values if lower_bound <= v <= upper_bound]
-        return np.mean(filtered) if filtered else np.mean(values)
-    
-    def get_calibration_stats(self) -> dict:
-        """Get calibration statistics for debugging"""
-        return {
-            'extended': {
-                'right_samples': len(self.data.extended_angles['RIGHT']),
-                'left_samples': len(self.data.extended_angles['LEFT']),
-                'right_avg': self._calculate_robust_average(self.data.extended_angles['RIGHT']),
-                'left_avg': self._calculate_robust_average(self.data.extended_angles['LEFT'])
-            },
-            'contracted': {
-                'right_samples': len(self.data.contracted_angles['RIGHT']),
-                'left_samples': len(self.data.contracted_angles['LEFT']),
-                'right_avg': self._calculate_robust_average(self.data.contracted_angles['RIGHT']),
-                'left_avg': self._calculate_robust_average(self.data.contracted_angles['LEFT'])
-            },
-            'thresholds': {
-                'extended': self.data.extended_threshold,
-                'contracted': self.data.contracted_threshold,
-                'safe_min': self.data.safe_angle_min,
-                'safe_max': self.data.safe_angle_max
-            }
-        }
+        # Final check (e.g., if ROM is too small)
+        if self.data.extended_threshold - self.data.contracted_threshold < 30:
+            self.data.message = "WARNING: Small Range of Motion detected. Please try to move fully."

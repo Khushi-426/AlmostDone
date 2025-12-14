@@ -25,6 +25,7 @@ from flask_socketio import SocketIO, emit
 
 # --- IMPORT CUSTOM AI MODULE (CRITICAL FOR ACCURACY) ---
 from ai_engine import AIEngine
+from constants import EXERCISE_PRESETS 
 
 
 # --- 0. CONFIGURATION ---
@@ -111,6 +112,32 @@ def generate_video_frames():
         if ret:
             yield (b'--frame\r\n'
                     b'Content-Type: image/jpeg\r\n\r\n' + buffer.tobytes() + b'\r\n')
+
+
+# --- HELPER: EXERCISE DATA FOR FRONTEND (FIXED) ---
+def _get_frontend_exercise_list():
+    """Generates a list of exercises with mock data for the frontend UI."""
+    # Mock data for UI presentation properties (category, instructions, etc.)
+    # The exercise keys must match the keys in EXERCISE_PRESETS from constants.py
+    exercise_map = {
+        "Bicep Curl": {"id": "bicep_curl", "category": "Strength • Arms", "duration": "5 Mins", "difficulty": "Beginner", "recommended": True, "description": "A fundamental exercise for building upper arm strength and stability.", "instructions": ["Stand with feet shoulder-width apart.", "Keep elbows close to your torso at all times.", "Contract biceps to curl weights upwards.", "Lower slowly to starting position.", "Avoid swinging your body."], "color": '#E8F5E9', "iconColor": '#2C5D31', "video": "/bicep_demo.mp4"},
+        "Knee Lift": {"id": "knee_lift", "category": "Core • Legs", "duration": "5 Mins", "difficulty": "Beginner", "recommended": False, "description": "Strengthens core and hip flexors for better stability.", "instructions": ["Stand tall, lift one knee to waist height.", "Hold for 3 seconds.", "Return slowly and repeat on the other side.", "Maintain an upright posture."], "color": '#E3F2FD', "iconColor": '#1E88E5', "video": "/knee_lift_demo.mp4"},
+        "Shoulder Press": {"id": "shoulder_press", "category": "Mobility • Shoulders", "duration": "8 Mins", "difficulty": "Intermediate", "recommended": False, "description": "Overhead press to improve shoulder mobility and strength.", "instructions": ["Hold weights at shoulder level with palms facing forward.", "Push weights up until arms are fully extended.", "Lower back down slowly to the starting position.", "Keep your back straight throughout."], "color": '#FFF3E0', "iconColor": '#EF6C00', "video": "/shoulder_press_demo.mp4"},
+        "Squat": {"id": "squat", "category": "Strength • Legs", "duration": "10 Mins", "difficulty": "Intermediate", "recommended": True, "description": "A full-body exercise for lower body strength and depth control.", "instructions": ["Stand with feet shoulder-width apart.", "Lower hips as if sitting in a chair.", "Keep your chest up and back straight.", "Ensure knees track over your toes."], "color": '#FBEFF5', "iconColor": '#AD1457', "video": "/squat_demo.mp4"},
+        "Standing Row": {"id": "standing_row", "category": "Strength • Back", "duration": "7 Mins", "difficulty": "Intermediate", "recommended": False, "description": "Targets the upper back and lats for improved posture and pulling strength.", "instructions": ["Stand with slight knee bend and hinge at the hips.", "Pull arms back, squeezing shoulder blades together.", "Keep elbows close to the body.", "Slowly extend arms to the starting position."], "color": '#F3E5F5', "iconColor": '#6A1B9A', "video": "/standing_row_demo.mp4"},
+    }
+
+    exercise_list = []
+    # Loop through the list of exercises defined in your constants.py file
+    for name in EXERCISE_PRESETS:
+        ui_data = exercise_map.get(name, {})
+        # Create a combined object for the frontend
+        exercise_list.append({
+            'id': name.lower().replace(' ', '_'),
+            'title': name, 
+            **ui_data
+        })
+    return [e for e in exercise_list if 'title' in e]
 
 
 # --- 3. SOCKET EVENTS (NEW) ---
@@ -250,7 +277,13 @@ def get_ai_prediction():
     return jsonify(AIEngine.get_recovery_prediction(sessions) if sessions else {'error': 'No data'})
 
 
-@app.route('/start_tracking', methods=['GET', 'POST']) # << CRITICAL FIX: Allow both GET (for compatibility) and POST (for exercise selection)
+@app.route('/api/exercises', methods=['GET']) 
+def get_exercises():
+    """Returns the list of configured exercises for the frontend."""
+    return jsonify(_get_frontend_exercise_list()), 200
+
+
+@app.route('/start_tracking', methods=['GET', 'POST']) 
 def start_tracking():
     global workout_session
     
@@ -259,7 +292,8 @@ def start_tracking():
     # Try to get exercise name from JSON body if it's a POST request
     if request.method == 'POST':
         try:
-            exercise_name = request.json.get('exercise', 'Bicep Curl')
+            # CRITICAL: Retrieve the 'exercise' name sent from the frontend
+            exercise_name = request.json.get('exercise', 'Bicep Curl') 
         except:
             # If JSON is invalid or missing, stick with default
             pass

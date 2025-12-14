@@ -1,162 +1,433 @@
-import React, { useEffect, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
-import { motion } from 'framer-motion';
-import { Activity, AlertTriangle, CheckCircle, ArrowLeft } from 'lucide-react';
+import React, { useState, useEffect } from "react";
+import { useNavigate } from "react-router-dom";
+import {
+  ArrowLeft,
+  CheckCircle,
+  Activity,
+  Clock,
+  AlertTriangle,
+  ChevronDown,
+} from "lucide-react";
+import { motion } from "framer-motion";
 
+// Component to display the final workout report
 const Report = () => {
   const navigate = useNavigate();
-  const [data, setData] = useState(null);
+  const [report, setReport] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
 
   useEffect(() => {
-    fetch('http://localhost:5000/report_data')
-      .then(res => res.json())
-      .then(json => {
-        setData(json);
+    const fetchReport = async () => {
+      try {
+        // Fetch report data from the backend's dedicated endpoint
+        const response = await fetch("http://localhost:5000/report_data");
+        if (!response.ok) {
+          throw new Error(`HTTP error! status: ${response.status}`);
+        }
+        const data = await response.json();
+
+        if (data.error) {
+          setError(data.error);
+        } else {
+          setReport(data);
+        }
+      } catch (e) {
+        console.error("Failed to fetch report data:", e);
+        setError(
+          "Could not retrieve session report. Please check the backend connection."
+        );
+      } finally {
         setLoading(false);
-      })
-      .catch(err => {
-        console.error(err);
-        setLoading(false);
-      });
+      }
+    };
+
+    fetchReport();
   }, []);
 
-  if (loading) return <div style={{height:'100vh', background:'var(--bg-color)', color:'var(--text-primary)', display:'flex', alignItems:'center', justifyContent:'center'}}>Generating Report...</div>;
+  const calculateAccuracy = (reps, errors) => {
+    if (reps === 0) return 100;
+    // Heuristic used in AIEngine: 1 error penalizes 20% accuracy
+    return Math.max(0, 100 - Math.floor((errors / reps) * 20));
+  };
 
-  if (!data || !data.summary) {
+  // --- Helper to render UI elements ---
+  const renderStatCard = (title, value, icon, color) => (
+    <div
+      style={{
+        background: "#fff",
+        borderRadius: "16px",
+        padding: "20px",
+        boxShadow: "0 4px 12px rgba(0,0,0,0.05)",
+        textAlign: "center",
+      }}
+    >
+      <div style={{ color: color, marginBottom: "8px" }}>
+        {React.createElement(icon, { size: 28 })}
+      </div>
+      <div style={{ fontSize: "1.8rem", fontWeight: "800", color: "#1A3C34" }}>
+        {value}
+      </div>
+      <div
+        style={{
+          fontSize: "0.9rem",
+          color: "#888",
+          fontWeight: "600",
+          textTransform: "uppercase",
+        }}
+      >
+        {title}
+      </div>
+    </div>
+  );
+
+  // --- Main Render ---
+  if (loading) {
     return (
-        <div style={{height:'100vh', background:'var(--bg-color)', color:'var(--text-primary)', display:'flex', flexDirection:'column', alignItems:'center', justifyContent:'center', gap:'20px'}}>
-            <h2>No Session Data Found</h2>
-            <p style={{color:'var(--text-secondary)'}}>The session data was lost or no workout was performed.</p>
-            <button 
-                onClick={() => navigate('/')} 
-                style={{padding:'12px 24px', background:'var(--primary-color)', color:'#fff', border:'none', borderRadius:'30px', cursor:'pointer', fontWeight:'bold', boxShadow: '0 5px 15px rgba(118, 176, 65, 0.4)'}}
-            >
-                Return to Dashboard
-            </button>
-        </div>
+      <div
+        style={{ textAlign: "center", padding: "100px", fontSize: "1.2rem" }}
+      >
+        Loading report...
+      </div>
     );
   }
 
-  const { summary } = data;
-  const totalReps = summary.RIGHT.total_reps + summary.LEFT.total_reps;
+  if (error) {
+    return (
+      <div
+        style={{
+          textAlign: "center",
+          padding: "100px",
+          fontSize: "1.2rem",
+          color: "#D32F2F",
+        }}
+      >
+        Error: {error}
+      </div>
+    );
+  }
 
-  // --- Recommendation Logic ---
-  const getRecommendations = () => {
-    const recs = [];
-    if (totalReps === 0) {
-      return [{ title: "Start Up", text: "No reps detected. Ensure you are visible in the frame next time.", color: "#aaa" }];
-    }
+  if (!report || !report.summary) {
+    return (
+      <div
+        style={{
+          textAlign: "center",
+          padding: "100px",
+          fontSize: "1.2rem",
+          color: "#888",
+        }}
+      >
+        No session data found.
+      </div>
+    );
+  }
 
-    // Tempo
-    const rTime = summary.RIGHT.min_time;
-    const lTime = summary.LEFT.min_time;
-    if (rTime > 0 && lTime > 0) {
-        const ratio = Math.max(rTime, lTime) / Math.min(rTime, lTime);
-        if (ratio > 1.25) {
-            const slower = rTime > lTime ? 'RIGHT' : 'LEFT';
-            recs.push({ title: "Tempo Imbalance", text: `Your ${slower} arm is significantly slower. Try to match the speed of both arms.`, color: "#ff9800" });
-        } else if (rTime < 1.5) {
-            recs.push({ title: "Too Fast", text: "Slow down! Fast reps reduce muscle tension. Aim for 2-3 seconds per rep.", color: "#D32F2F" });
-        } else {
-            recs.push({ title: "Great Tempo", text: "Your repetition speed is consistent and controlled. Keep it up!", color: "var(--primary-color)" });
-        }
-    }
+  const right = report.summary.RIGHT;
+  const left = report.summary.LEFT;
 
-    // Form
-    const rErr = summary.RIGHT.error_count;
-    const lErr = summary.LEFT.error_count;
-    if (rErr > 0 || lErr > 0) {
-        const side = rErr > lErr ? "RIGHT" : (lErr > rErr ? "LEFT" : "BOTH");
-        recs.push({ title: `Form Check (${side})`, text: `Detected ${rErr + lErr} form errors (Over-curl/Over-extend). Focus on stopping before locking out your elbows.`, color: "#D32F2F" });
-    } else {
-        recs.push({ title: "Perfect Form", text: "Zero form errors detected! Your technique is solid.", color: "var(--primary-color)" });
-    }
+  const totalReps = right.total_reps + left.total_reps;
+  const totalErrors = right.error_count + left.error_count;
+  const overallAccuracy = calculateAccuracy(totalReps, totalErrors);
 
-    // Balance
-    const diff = Math.abs(summary.RIGHT.total_reps - summary.LEFT.total_reps);
-    if (diff > 2) {
-        recs.push({ title: "Muscle Imbalance", text: `You did ${diff} more reps on one side. Always finish your set with equal reps.`, color: "#ff9800" });
-    }
-
-    return recs;
+  const formatTime = (seconds) => {
+    const mins = Math.floor(seconds / 60);
+    const secs = seconds % 60;
+    return `${mins}m ${secs}s`;
   };
 
-  const recommendations = getRecommendations();
+  return (
+    <motion.div
+      initial={{ opacity: 0, y: 20 }}
+      animate={{ opacity: 1, y: 0 }}
+      style={{
+        maxWidth: "900px",
+        margin: "0 auto",
+        padding: "40px 5%",
+        background: "#F9F7F3",
+        minHeight: "100vh",
+      }}
+    >
+      {/* Header */}
+      <div
+        style={{
+          display: "flex",
+          justifyContent: "space-between",
+          alignItems: "center",
+          marginBottom: "40px",
+        }}
+      >
+        <button
+          onClick={() => navigate("/")}
+          style={{
+            background: "#fff",
+            border: "1px solid #ddd",
+            padding: "10px 20px",
+            borderRadius: "30px",
+            color: "#4A635D",
+            cursor: "pointer",
+            display: "flex",
+            alignItems: "center",
+            gap: "8px",
+            fontWeight: "600",
+            transition: "all 0.2s",
+          }}
+        >
+          <ArrowLeft size={18} /> Back to Dashboard
+        </button>
+      </div>
 
-  // Animation Variants
-  const container = { hidden: { opacity: 0 }, show: { opacity: 1, transition: { staggerChildren: 0.1 } } };
-  const item = { hidden: { y: 20, opacity: 0 }, show: { y: 0, opacity: 1 } };
+      {/* Title - CRITICAL FIX: Use the dynamic exercise name */}
+      <h1
+        style={{
+          fontSize: "2.5rem",
+          color: "#1A3C34",
+          fontWeight: "800",
+          marginBottom: "10px",
+        }}
+      >
+        {report.exercise_name || "Workout"} Report
+      </h1>
+      <p style={{ color: "#4A635D", fontSize: "1.1rem", marginBottom: "30px" }}>
+        Detailed breakdown of your performance from the session completed on{" "}
+        {new Date().toLocaleDateString()}.
+      </p>
+
+      {/* Key Stats Grid */}
+      <div
+        style={{
+          display: "grid",
+          gridTemplateColumns: "repeat(4, 1fr)",
+          gap: "20px",
+          marginBottom: "40px",
+        }}
+      >
+        {renderStatCard("Total Reps", totalReps, CheckCircle, "#2C5D31")}
+        {renderStatCard(
+          "Duration",
+          formatTime(Math.round(report.duration)),
+          Clock,
+          "#1E88E5"
+        )}
+        {renderStatCard(
+          "Accuracy",
+          `${overallAccuracy}%`,
+          Activity,
+          overallAccuracy > 75 ? "#2C5D31" : "#EF6C00"
+        )}
+        {renderStatCard(
+          "Form Errors",
+          totalErrors,
+          AlertTriangle,
+          totalErrors > 0 ? "#D32F2F" : "#2C5D31"
+        )}
+      </div>
+
+      {/* Side-by-Side Summary */}
+      <div
+        style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "30px" }}
+      >
+        {/* Right Side */}
+        <div
+          style={{
+            background: "#fff",
+            borderRadius: "20px",
+            padding: "30px",
+            boxShadow: "0 4px 12px rgba(0,0,0,0.05)",
+          }}
+        >
+          <h2
+            style={{
+              color: "#1A3C34",
+              fontWeight: "800",
+              fontSize: "1.5rem",
+              marginBottom: "20px",
+            }}
+          >
+            Right Side
+          </h2>
+          <div
+            style={{ display: "flex", flexDirection: "column", gap: "15px" }}
+          >
+            <SummaryRow label="Reps Completed" value={right.total_reps} />
+            <SummaryRow label="Min Rep Time" value={`${right.min_time}s`} />
+            <SummaryRow
+              label="Error Count"
+              value={right.error_count}
+              color={right.error_count > 0 ? "#D32F2F" : "#2C5D31"}
+            />
+            <SummaryRow
+              label="Side Accuracy"
+              value={`${calculateAccuracy(
+                right.total_reps,
+                right.error_count
+              )}%`}
+            />
+          </div>
+        </div>
+
+        {/* Left Side */}
+        <div
+          style={{
+            background: "#fff",
+            borderRadius: "20px",
+            padding: "30px",
+            boxShadow: "0 4px 12px rgba(0,0,0,0.05)",
+          }}
+        >
+          <h2
+            style={{
+              color: "#1A3C34",
+              fontWeight: "800",
+              fontSize: "1.5rem",
+              marginBottom: "20px",
+            }}
+          >
+            Left Side
+          </h2>
+          <div
+            style={{ display: "flex", flexDirection: "column", gap: "15px" }}
+          >
+            <SummaryRow label="Reps Completed" value={left.total_reps} />
+            <SummaryRow label="Min Rep Time" value={`${left.min_time}s`} />
+            <SummaryRow
+              label="Error Count"
+              value={left.error_count}
+              color={left.error_count > 0 ? "#D32F2F" : "#2C5D31"}
+            />
+            <SummaryRow
+              label="Side Accuracy"
+              value={`${calculateAccuracy(left.total_reps, left.error_count)}%`}
+            />
+          </div>
+        </div>
+      </div>
+
+      {/* Calibration Summary */}
+      <CalibrationDetail data={report.calibration} />
+    </motion.div>
+  );
+};
+
+// Helper component for summary rows
+const SummaryRow = ({ label, value, color }) => (
+  <div
+    style={{
+      display: "flex",
+      justifyContent: "space-between",
+      padding: "10px 0",
+      borderBottom: "1px dashed #eee",
+    }}
+  >
+    <span style={{ color: "#555", fontWeight: "500" }}>{label}</span>
+    <span style={{ color: color || "#1A3C34", fontWeight: "700" }}>
+      {value}
+    </span>
+  </div>
+);
+
+// Helper component for calibration details
+const CalibrationDetail = ({ data }) => {
+  const [isOpen, setIsOpen] = useState(false);
+
+  // Determine the tracked joint name (e.g., Elbow, Knee) based on common defaults or external mapping
+  // Since we don't have the exercise_config here, we default to the joint relevant to bicep/tricep movement,
+  // but the actual angle data (the numbers) are correct from the backend.
+  const jointName = "Joint Angle";
 
   return (
-    <div style={{ minHeight: '100vh', background: 'var(--bg-color)', color: 'var(--text-primary)', padding: '40px', fontFamily: 'sans-serif' }}>
-      
-      <div style={{ maxWidth: '1000px', margin: '0 auto' }}>
-        <header style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '40px', borderBottom:'1px solid rgba(0,0,0,0.05)', paddingBottom:'20px' }}>
-            <div>
-                <h1 style={{ margin: 0, fontSize: '2.5rem', fontWeight: '800' }}>Session <span style={{color: 'var(--primary-color)'}}>Report</span></h1>
-                <p style={{ color: 'var(--text-secondary)', margin: '5px 0 0 0' }}>Duration: {data.duration} seconds</p>
-            </div>
-            <button onClick={() => navigate('/')} style={{ background:'white', border:'1px solid #eee', color:'var(--text-primary)', padding:'10px 20px', borderRadius:'30px', cursor:'pointer', display:'flex', alignItems:'center', gap:'10px', boxShadow: '0 5px 15px rgba(0,0,0,0.05)' }}>
-                <ArrowLeft size={18} /> Back to Dashboard
-            </button>
-        </header>
-
-        <motion.div variants={container} initial="hidden" animate="show" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))', gap: '25px' }}>
-            
-            {/* Total Summary */}
-            <motion.div variants={item} style={{ background: 'var(--card-bg)', padding: '30px', borderRadius: '20px', textAlign: 'center', gridColumn: '1 / -1', boxShadow: '0 10px 30px rgba(0,0,0,0.03)' }}>
-                <div style={{ fontSize: '5rem', fontWeight: '900', color: 'var(--primary-color)', lineHeight: 1 }}>{totalReps}</div>
-                <div style={{ textTransform: 'uppercase', color: 'var(--text-secondary)', letterSpacing: '2px', fontWeight: '600', marginTop: '10px' }}>Total Repetitions</div>
-            </motion.div>
-
-            {/* Right Arm Card */}
-            <motion.div variants={item} style={{ background: 'var(--card-bg)', padding: '30px', borderRadius: '20px', borderTop: '5px solid #D32F2F', boxShadow: '0 10px 30px rgba(0,0,0,0.03)' }}>
-                <h2 style={{ color: '#D32F2F', display: 'flex', alignItems: 'center', gap: '10px' }}>RIGHT ARM <Activity size={20}/></h2>
-                <div style={{ display: 'flex', justifyContent: 'space-between', margin: '20px 0', borderBottom: '1px solid #f0f0f0', paddingBottom: '15px' }}>
-                    <span style={{color: 'var(--text-secondary)'}}>Reps</span> <span style={{ fontWeight: 'bold', fontSize: '1.4rem' }}>{summary.RIGHT.total_reps}</span>
-                </div>
-                <div style={{ display: 'flex', justifyContent: 'space-between', margin: '20px 0', borderBottom: '1px solid #f0f0f0', paddingBottom: '15px' }}>
-                    <span style={{color: 'var(--text-secondary)'}}>Best Time</span> <span style={{ fontWeight: 'bold', color: 'var(--text-primary)' }}>{summary.RIGHT.min_time.toFixed(2)}s</span>
-                </div>
-                <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                    <span style={{color: 'var(--text-secondary)'}}>Errors</span> <span style={{ fontWeight: 'bold', color: summary.RIGHT.error_count > 0 ? '#D32F2F' : 'var(--primary-color)' }}>{summary.RIGHT.error_count}</span>
-                </div>
-            </motion.div>
-
-            {/* Left Arm Card */}
-            <motion.div variants={item} style={{ background: 'var(--card-bg)', padding: '30px', borderRadius: '20px', borderTop: '5px solid var(--primary-color)', boxShadow: '0 10px 30px rgba(0,0,0,0.03)' }}>
-                <h2 style={{ color: 'var(--primary-color)', display: 'flex', alignItems: 'center', gap: '10px' }}>LEFT ARM <Activity size={20}/></h2>
-                <div style={{ display: 'flex', justifyContent: 'space-between', margin: '20px 0', borderBottom: '1px solid #f0f0f0', paddingBottom: '15px' }}>
-                    <span style={{color: 'var(--text-secondary)'}}>Reps</span> <span style={{ fontWeight: 'bold', fontSize: '1.4rem' }}>{summary.LEFT.total_reps}</span>
-                </div>
-                <div style={{ display: 'flex', justifyContent: 'space-between', margin: '20px 0', borderBottom: '1px solid #f0f0f0', paddingBottom: '15px' }}>
-                    <span style={{color: 'var(--text-secondary)'}}>Best Time</span> <span style={{ fontWeight: 'bold', color: 'var(--text-primary)' }}>{summary.LEFT.min_time.toFixed(2)}s</span>
-                </div>
-                <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                    <span style={{color: 'var(--text-secondary)'}}>Errors</span> <span style={{ fontWeight: 'bold', color: summary.LEFT.error_count > 0 ? '#D32F2F' : 'var(--primary-color)' }}>{summary.LEFT.error_count}</span>
-                </div>
-            </motion.div>
-
-            {/* Recommendations Panel */}
-            <motion.div variants={item} style={{ background: '#fff', padding: '30px', borderRadius: '20px', gridColumn: '1 / -1', marginTop: '20px', boxShadow: '0 10px 30px rgba(0,0,0,0.03)' }}>
-                <h3 style={{ borderBottom: '1px solid #f0f0f0', paddingBottom: '20px', marginBottom: '25px', color: 'var(--text-primary)' }}>AI Analysis & Recommendations</h3>
-                
-                {recommendations.length > 0 ? recommendations.map((rec, index) => (
-                    <div key={index} style={{ marginBottom: '25px', display: 'flex', gap: '15px' }}>
-                        <div style={{ paddingTop: '2px' }}>
-                           {rec.title.includes("Perfect") || rec.title.includes("Great") ? <CheckCircle color={rec.color} size={24} /> : <AlertTriangle color={rec.color} size={24} />}
-                        </div>
-                        <div>
-                            <h4 style={{ margin: '0 0 5px 0', color: rec.color, fontSize: '1.1rem' }}>{rec.title}</h4>
-                            <p style={{ margin: 0, color: 'var(--text-secondary)', fontSize: '1rem', lineHeight: '1.5' }}>{rec.text}</p>
-                        </div>
-                    </div>
-                )) : <div style={{color:'var(--text-secondary)'}}>No specific recommendations available.</div>}
-            </motion.div>
-
+    <div
+      style={{
+        marginTop: "40px",
+        background: "#fff",
+        borderRadius: "20px",
+        boxShadow: "0 4px 12px rgba(0,0,0,0.05)",
+        overflow: "hidden",
+      }}
+    >
+      <button
+        onClick={() => setIsOpen(!isOpen)}
+        style={{
+          width: "100%",
+          padding: "25px",
+          background: "#f8f9fa",
+          border: "none",
+          textAlign: "left",
+          cursor: "pointer",
+          display: "flex",
+          justifyContent: "space-between",
+          alignItems: "center",
+          fontSize: "1.2rem",
+          fontWeight: "700",
+          color: "#1A3C34",
+        }}
+      >
+        Calibration & Range of Motion Details
+        <motion.div
+          animate={{ rotate: isOpen ? 180 : 0 }}
+          transition={{ duration: 0.3 }}
+        >
+          <ChevronDown size={20} />
         </motion.div>
-      </div>
+      </button>
+
+      <AnimatePresence>
+        {isOpen && (
+          <motion.div
+            initial={{ height: 0, opacity: 0 }}
+            animate={{ height: "auto", opacity: 1 }}
+            exit={{ height: 0, opacity: 0 }}
+            transition={{ duration: 0.3, ease: "easeInOut" }}
+            style={{ padding: "25px", display: "flex", gap: "30px" }}
+          >
+            <div
+              style={{
+                flex: 1,
+                borderRight: "1px solid #eee",
+                paddingRight: "15px",
+              }}
+            >
+              <h3
+                style={{
+                  fontSize: "1rem",
+                  color: "#888",
+                  marginBottom: "10px",
+                }}
+              >
+                Calibration Results
+              </h3>
+              <SummaryRow
+                label={`Contracted Threshold (${jointName})`}
+                value={`${data.contracted_threshold}°`}
+              />
+              <SummaryRow
+                label={`Extended Threshold (${jointName})`}
+                value={`${data.extended_threshold}°`}
+              />
+            </div>
+            <div style={{ flex: 1 }}>
+              <h3
+                style={{
+                  fontSize: "1rem",
+                  color: "#888",
+                  marginBottom: "10px",
+                }}
+              >
+                Safety Boundaries
+              </h3>
+              <SummaryRow
+                label="Min Safe Angle"
+                value={`${data.safe_min}°`}
+                color="#2C5D31"
+              />
+              <SummaryRow
+                label="Max Safe Angle"
+                value={`${data.safe_max}°`}
+                color="#2C5D31"
+              />
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </div>
   );
 };

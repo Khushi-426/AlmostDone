@@ -25,7 +25,7 @@ class WorkoutSession:
         from models import ArmMetrics, CalibrationData, SessionHistory
         from angle_calculator import AngleCalculator
         from pose_processor import PoseProcessor
-        from calibration import CalibrationManager
+        from calibration import CalibrationManager # IMPORTANT
         from rep_counter import RepCounter
         
         # Load the configuration for the selected exercise
@@ -47,9 +47,12 @@ class WorkoutSession:
         self.pose_processor = PoseProcessor(angle_calc, self.exercise_config) 
         
         calibration_data = CalibrationData()
+        # The CalibrationManager needs the PoseProcessor, which holds the correct config
         self.calibration_manager = CalibrationManager(
-            self.pose_processor, calibration_data, 
-            CALIBRATION_HOLD_TIME, SAFETY_MARGIN
+            self.pose_processor, # PoseProcessor holds the exercise config
+            calibration_data, 
+            CALIBRATION_HOLD_TIME, 
+            SAFETY_MARGIN
         )
         
         self.rep_counter = RepCounter(calibration_data, MIN_REP_DURATION)
@@ -290,6 +293,8 @@ class WorkoutSession:
     def get_final_report(self) -> dict:
         """Generate final session report"""
         return {
+            # <<< CRITICAL FIX: Include the exercise name in the report data >>>
+            'exercise_name': self.exercise_config.name, 
             'duration': round(self.history.time[-1] if self.history.time else 0, 2),
             'summary': {
                 'RIGHT': {
