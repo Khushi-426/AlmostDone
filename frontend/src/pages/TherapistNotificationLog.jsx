@@ -1,108 +1,48 @@
-// frontend/src/pages/TherapistNotificationLog.jsx
-
-import React from 'react';
-
-// --- MOCK NOTIFICATION DATA ---
-const MOCK_NOTIFICATIONS = [
-  { id: 1, message: 'Protocol assigned successfully', patient: 'Alice Smith', type: 'Protocol', timestamp: '2025-12-14 10:30 AM' },
-  { id: 2, message: 'Protocol updated: Reps increased by 2', patient: 'Bob Johnson', type: 'Modification', timestamp: '2025-12-14 09:15 AM' },
-  { id: 3, message: 'Low adherence: John Doe missed 3 sessions', patient: 'John Doe', type: 'Alert', timestamp: '2025-12-13 06:00 PM' },
-  { id: 4, message: 'Exercise reminder sent to Alice Smith', patient: 'Alice Smith', type: 'Reminder', timestamp: '2025-12-13 08:00 AM' },
-  { id: 5, message: 'Protocol created: Post-Op Shoulder', patient: 'N/A', type: 'Protocol', timestamp: '2025-12-12 04:30 PM' },
-];
-
-const getTagStyle = (type) => {
-    switch (type) {
-        case 'Alert': return { backgroundColor: '#ff4d4f', color: 'white' };
-        case 'Protocol': return { backgroundColor: '#40a9ff', color: 'white' };
-        case 'Reminder': return { backgroundColor: '#faad14', color: 'white' };
-        case 'Modification': return { backgroundColor: '#722ed1', color: 'white' };
-        default: return { backgroundColor: '#f5f5f5', color: '#333' };
-    }
-};
+import React, { useState, useEffect } from 'react';
+import axios from 'axios';
+import { useNavigate } from 'react-router-dom';
 
 const TherapistNotificationLog = () => {
-  const notifications = MOCK_NOTIFICATIONS;
+  const navigate = useNavigate();
+  const [logs, setLogs] = useState([]);
+
+  useEffect(() => {
+    const fetchLogs = async () => {
+        try {
+            const res = await axios.get('http://localhost:5001/api/therapist/notifications');
+            setLogs(res.data);
+        } catch(e) { console.error(e); }
+    };
+    fetchLogs();
+  }, []);
 
   return (
-    <div style={styles.container}>
-      <h1 style={styles.header}>Automated Notifications Log</h1>
-      <p style={{marginBottom: '20px', color: '#555'}}>Track key events related to patient protocols and reminders.</p>
-      
-      <div style={styles.logContainer}>
-        {notifications.length === 0 ? (
-          <div style={styles.emptyState}>No recent notifications.</div>
-        ) : (
-          notifications.map(notif => (
-            <div key={notif.id} style={styles.notificationItem}>
-              <div style={styles.contentArea}>
-                <span style={{...styles.tag, ...getTagStyle(notif.type)}}>{notif.type}</span>
-                <p style={styles.message}>{notif.message}</p>
-              </div>
-              <div style={styles.metaArea}>
-                <p style={styles.metaText}>
-                  {notif.patient !== 'N/A' && <strong>Patient: </strong>}
-                  {notif.patient !== 'N/A' ? notif.patient : ''}
-                </p>
-                <p style={styles.metaText}><strong>Time: </strong>{notif.timestamp}</p>
-              </div>
-            </div>
-          ))
+    <div className="p-8 bg-gray-50 min-h-screen">
+       <button onClick={() => navigate('/therapist-dashboard')} className="mb-4 text-blue-600 underline">← Back</button>
+      <h1 className="text-3xl font-bold mb-6">System Notifications</h1>
+      <div className="bg-white rounded-lg shadow overflow-hidden">
+        {logs.length === 0 ? <p className="p-6">No notifications yet.</p> : (
+            <table className="min-w-full">
+                <thead className="bg-gray-100">
+                    <tr>
+                        <th className="px-6 py-3 text-left">Time</th>
+                        <th className="px-6 py-3 text-left">Type</th>
+                        <th className="px-6 py-3 text-left">Message</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {logs.map(log => (
+                        <tr key={log.id} className="border-b">
+                            <td className="px-6 py-4 text-sm text-gray-500">{log.date}</td>
+                            <td className="px-6 py-4 text-sm font-bold text-blue-600">{log.type}</td>
+                            <td className="px-6 py-4 text-sm text-gray-800">{log.message}</td>
+                        </tr>
+                    ))}
+                </tbody>
+            </table>
         )}
       </div>
     </div>
   );
 };
-
-// --- Styles ---
-const styles = {
-    container: { padding: '30px', backgroundColor: '#f0f2f5', minHeight: '100vh' },
-    header: { color: '#0050b3', borderBottom: '2px solid #e8e8e8', paddingBottom: '15px' },
-    logContainer: { 
-        backgroundColor: 'white', 
-        borderRadius: '8px', 
-        boxShadow: '0 2px 8px rgba(0,0,0,0.1)', 
-        overflow: 'hidden' 
-    },
-    notificationItem: {
-        display: 'flex',
-        justifyContent: 'space-between',
-        alignItems: 'center',
-        padding: '15px 20px',
-        borderBottom: '1px solid #eee',
-        transition: 'background-color 0.2s',
-    },
-    contentArea: {
-        display: 'flex',
-        alignItems: 'center',
-        flexGrow: 1,
-    },
-    metaArea: {
-        textAlign: 'right',
-        minWidth: '200px'
-    },
-    tag: {
-        padding: '5px 10px',
-        borderRadius: '4px',
-        fontSize: '0.8rem',
-        fontWeight: 'bold',
-        marginRight: '15px',
-    },
-    message: {
-        margin: 0,
-        fontSize: '1rem',
-        color: '#333'
-    },
-    metaText: {
-        margin: '2px 0',
-        fontSize: '0.9rem',
-        color: '#777'
-    },
-    emptyState: { 
-        textAlign: 'center', 
-        padding: '40px', 
-        color: '#999'
-    }
-};
-
 export default TherapistNotificationLog;

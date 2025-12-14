@@ -1,323 +1,133 @@
-// frontend/src/pages/TherapistAnalytics.jsx
-
-import React, { useState } from 'react';
-
-// --- MOCK DATA ---
-const MOCK_TREND_DATA = [
-  { date: 'Wk 1', score: 65 }, { date: 'Wk 2', score: 70 }, { date: 'Wk 3', score: 78 },
-  { date: 'Wk 4', score: 85 }, { date: 'Wk 5', score: 82 }, { date: 'Wk 6', score: 90 },
-];
-const MOCK_COMPARATIVE_DATA = [
-    { metric: 'Strength', initial: 50, current: 85 },
-    { metric: 'Mobility', initial: 60, current: 75 },
-    { metric: 'Endurance', initial: 40, current: 70 },
-    { metric: 'Balance', initial: 75, current: 90 },
-];
-const MOCK_FORECAST_DATA = [
-    { date: 'Wk 7', score: 92, forecast: 95, lower: 90, upper: 100 },
-    { date: 'Wk 8', score: 93, forecast: 98, lower: 92, upper: 100 },
-];
-
-// Utility to create a mock chart visualization (CSS/SVG Mockup)
-const MockLineChart = ({ data, title, isForecast = false }) => (
-    <div style={styles.chartCard}>
-        <h3 style={styles.chartHeader}>{title}</h3>
-        <div style={styles.chartContainer}>
-            <div style={styles.chartYAxis}>
-                <span>100</span><span>50</span><span>0</span>
-            </div>
-            <div style={styles.chartArea}>
-                {data.map((item, index) => (
-                    <div key={index} style={styles.dataPoint(item.score)}>
-                        <div style={styles.dot}></div>
-                        <span style={styles.label}>{item.score}</span>
-                    </div>
-                ))}
-                {isForecast && MOCK_FORECAST_DATA.map((item, index) => (
-                    <div key={index} style={{...styles.dataPoint(item.forecast), borderLeft: '1px dashed #999'}}>
-                        <div style={{...styles.dot, backgroundColor: '#faad14'}}></div>
-                        <span style={{...styles.label, backgroundColor: '#faad14'}}>{item.forecast} (AI)</span>
-                    </div>
-                ))}
-            </div>
-            <div style={styles.chartXAxis}>
-                {data.map(item => <span key={item.date}>{item.date}</span>)}
-                {isForecast && MOCK_FORECAST_DATA.map(item => <span key={item.date} style={{color: '#faad14'}}>{item.date}</span>)}
-            </div>
-        </div>
-        {isForecast && (
-            <div style={styles.forecastInsight}>
-                <p><strong>AI Insight:</strong> Estimated full functional recovery in 4-6 weeks (95% confidence).</p>
-            </div>
-        )}
-    </div>
-);
-
-const MockComparativeChart = ({ data, title }) => (
-    <div style={styles.chartCard}>
-        <h3 style={styles.chartHeader}>{title}</h3>
-        <div style={styles.comparativeChartArea}>
-            {data.map((item, index) => (
-                <div key={index} style={styles.barGroup}>
-                    <p style={styles.barLabel}>{item.metric}</p>
-                    <div style={styles.barWrapper}>
-                        <div style={{...styles.bar, width: `${item.initial}%`, backgroundColor: '#40a9ff'}}>
-                            <span style={styles.barText}>{item.initial}%</span>
-                        </div>
-                        <div style={{...styles.bar, width: `${item.current}%`, backgroundColor: '#0050b3'}}>
-                            <span style={styles.barText}>{item.current}%</span>
-                        </div>
-                    </div>
-                </div>
-            ))}
-        </div>
-        <div style={styles.legend}>
-            <span style={{...styles.legendDot, backgroundColor: '#40a9ff'}}></span> Initial Assessment
-            <span style={{...styles.legendDot, backgroundColor: '#0050b3', marginLeft: '20px'}}></span> Current Performance
-        </div>
-    </div>
-);
-
+import React, { useState, useEffect } from 'react';
+import axios from 'axios';
+import { useNavigate } from 'react-router-dom';
 
 const TherapistAnalytics = () => {
-  const [selectedExercise, setSelectedExercise] = useState('Bicep Curl');
+  const navigate = useNavigate();
+  const [stats, setStats] = useState(null);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    fetchAggregateData();
+  }, []);
+
+  const fetchAggregateData = async () => {
+    try {
+      // Reuse the existing patient endpoint
+      const res = await axios.get('http://localhost:5001/api/therapist/patients');
+      const patients = res.data.patients || [];
+
+      // Calculate Aggregates
+      const totalPatients = patients.length;
+      const activePatients = patients.filter(p => p.status !== 'High Risk').length; // Assuming High Risk might imply inactivity or issues
+      const totalCompliance = patients.reduce((acc, p) => acc + (p.compliance || 0), 0);
+      const avgCompliance = totalPatients > 0 ? Math.round(totalCompliance / totalPatients) : 0;
+      
+      const riskDistribution = {
+        stable: patients.filter(p => p.status === 'Stable').length,
+        alert: patients.filter(p => p.status === 'Alert').length,
+        highRisk: patients.filter(p => p.status === 'High Risk').length,
+      };
+
+      setStats({
+        totalPatients,
+        activePatients,
+        avgCompliance,
+        riskDistribution
+      });
+      setLoading(false);
+
+    } catch (err) {
+      console.error("Error loading analytics:", err);
+      setLoading(false);
+    }
+  };
+
+  if (loading) return <div style={{padding:'40px', textAlign:'center'}}>Loading System Analytics...</div>;
 
   return (
     <div style={styles.container}>
-      <h1 style={styles.mainHeader}>Advanced Patient Analytics</h1>
-      <p style={{marginBottom: '30px', color: '#555'}}>Visualizations for tracking progress, errors, and recovery forecasts.</p>
-      
-      {/* Exercise Selector */}
-      <div style={styles.controlPanel}>
-          <strong>Select Exercise:</strong>
-          <select 
-              value={selectedExercise} 
-              onChange={(e) => setSelectedExercise(e.target.value)}
-              style={styles.selectStyle}
-          >
-              <option>Bicep Curl</option>
-              <option>Shoulder Extension</option>
-              <option>Wall Squat</option>
-          </select>
-          <strong style={{marginLeft: '20px'}}>Time View:</strong>
-          <select style={styles.selectStyle}>
-              <option>Weekly</option>
-              <option>Monthly</option>
-          </select>
+      <button onClick={() => navigate('/therapist-dashboard')} style={styles.backButton}>← Back to Dashboard</button>
+      <h1 style={styles.header}>Clinic Performance Analytics</h1>
+
+      {/* --- KPI CARDS --- */}
+      <div style={styles.kpiGrid}>
+        <div style={styles.kpiCard}>
+          <h3 style={styles.kpiTitle}>Total Patients</h3>
+          <p style={{...styles.kpiValue, color: '#1890ff'}}>{stats.totalPatients}</p>
+        </div>
+        <div style={styles.kpiCard}>
+          <h3 style={styles.kpiTitle}>Avg. Compliance</h3>
+          <p style={{...styles.kpiValue, color: stats.avgCompliance > 70 ? '#52c41a' : '#faad14'}}>
+            {stats.avgCompliance}%
+          </p>
+        </div>
+        <div style={styles.kpiCard}>
+          <h3 style={styles.kpiTitle}>At-Risk Patients</h3>
+          <p style={{...styles.kpiValue, color: '#f5222d'}}>{stats.riskDistribution.highRisk}</p>
+          <span style={{fontSize:'0.8rem', color:'#888'}}>Require Immediate Attention</span>
+        </div>
       </div>
 
-      {/* Grid for Quality Score Trend and Forecasting */}
-      <div style={styles.twoColumnGrid}>
-        <MockLineChart 
-            data={MOCK_TREND_DATA} 
-            title={`Quality Score Trend - ${selectedExercise}`} 
-        />
-        <MockLineChart 
-            data={MOCK_TREND_DATA.slice(-4)} 
-            title={`AI Recovery Forecast`} 
-            isForecast={true}
-        />
-      </div>
-
-      {/* Grid for Comparative and Spider Charts */}
-      <div style={styles.twoColumnGrid}>
-        <MockComparativeChart 
-            data={MOCK_COMPARATIVE_DATA} 
-            title="Functional Improvement (Initial vs Current)" 
-        />
+      {/* --- CHARTS SECTION (Visualized via CSS Bars) --- */}
+      <div style={styles.chartsGrid}>
         
-        {/* Mock Radar Chart (Styled Div) */}
+        {/* Risk Distribution Chart */}
         <div style={styles.chartCard}>
-            <h3 style={styles.chartHeader}>Functional Domain Tracking (Radar Chart Mock)</h3>
-            <div style={styles.radarPlaceholder}>
-                <p>Mobility: 75% | Strength: 85% | Balance: 90%</p>
-                <p style={{color: '#999'}}>* Visualization requires charting library (Mock Data)</p>
+          <h3 style={styles.chartTitle}>Patient Risk Distribution</h3>
+          <div style={styles.barContainer}>
+            <div style={styles.barRow}>
+              <span style={styles.label}>Stable</span>
+              <div style={{...styles.bar, width: `${(stats.riskDistribution.stable / stats.totalPatients)*100}%`, backgroundColor:'#52c41a'}}></div>
+              <span style={styles.count}>{stats.riskDistribution.stable}</span>
             </div>
+            <div style={styles.barRow}>
+              <span style={styles.label}>Alert</span>
+              <div style={{...styles.bar, width: `${(stats.riskDistribution.alert / stats.totalPatients)*100}%`, backgroundColor:'#faad14'}}></div>
+              <span style={styles.count}>{stats.riskDistribution.alert}</span>
+            </div>
+            <div style={styles.barRow}>
+              <span style={styles.label}>High Risk</span>
+              <div style={{...styles.bar, width: `${(stats.riskDistribution.highRisk / stats.totalPatients)*100}%`, backgroundColor:'#f5222d'}}></div>
+              <span style={styles.count}>{stats.riskDistribution.highRisk}</span>
+            </div>
+          </div>
+        </div>
+
+        {/* System Health Status */}
+        <div style={styles.chartCard}>
+          <h3 style={styles.chartTitle}>System Health</h3>
+          <p style={{margin:'20px 0', color:'#555'}}>
+            The AI Engine is actively monitoring <strong>{stats.totalPatients}</strong> patients.
+            Currently, <strong>{stats.riskDistribution.stable}</strong> are performing within expected recovery parameters.
+          </p>
+          <button style={styles.actionButton} onClick={() => navigate('/therapist/monitoring')}>
+            Go to Patient Monitoring
+          </button>
         </div>
       </div>
     </div>
   );
 };
 
-// --- Styles (Data-dense, Responsive) ---
+// Styles
 const styles = {
-    container: { 
-        padding: '30px', 
-        backgroundColor: '#f0f2f5', 
-        minHeight: '100vh',
-    },
-    mainHeader: { 
-        color: '#0050b3', 
-        borderBottom: '2px solid #e8e8e8', 
-        paddingBottom: '10px', 
-        marginBottom: '10px' 
-    },
-    controlPanel: {
-        display: 'flex',
-        flexWrap: 'wrap',
-        alignItems: 'center',
-        backgroundColor: 'white',
-        padding: '15px',
-        borderRadius: '8px',
-        marginBottom: '20px',
-        gap: '15px'
-    },
-    selectStyle: {
-        padding: '8px 12px',
-        borderRadius: '4px',
-        border: '1px solid #d9d9d9'
-    },
-    twoColumnGrid: {
-        display: 'grid',
-        gridTemplateColumns: 'repeat(auto-fit, minmax(400px, 1fr))',
-        gap: '20px',
-        marginBottom: '20px'
-    },
-    chartCard: {
-        backgroundColor: 'white',
-        padding: '20px',
-        borderRadius: '8px',
-        boxShadow: '0 2px 8px rgba(0,0,0,0.1)',
-        overflowX: 'auto', // Ensure chart is scrollable if needed
-    },
-    chartHeader: {
-        color: '#333',
-        marginBottom: '20px',
-        borderBottom: '1px solid #eee',
-        paddingBottom: '10px'
-    },
-    // --- Mock Line Chart Styles ---
-    chartContainer: { 
-        display: 'flex', 
-        height: '250px', 
-        position: 'relative',
-        paddingLeft: '30px'
-    },
-    chartYAxis: {
-        position: 'absolute',
-        left: 0,
-        height: '100%',
-        display: 'flex',
-        flexDirection: 'column',
-        justifyContent: 'space-between',
-        fontSize: '0.8rem',
-        color: '#777',
-        textAlign: 'right',
-        paddingRight: '5px'
-    },
-    chartArea: {
-        flexGrow: 1,
-        borderLeft: '1px solid #ccc',
-        borderBottom: '1px solid #ccc',
-        display: 'flex',
-        justifyContent: 'space-around',
-        alignItems: 'flex-end',
-        position: 'relative'
-    },
-    dataPoint: (score) => ({
-        position: 'relative',
-        height: `${score}%`, // Mock value representation
-        width: '1px', 
-        backgroundColor: '#0050b3', 
-        transition: 'height 0.5s',
-        display: 'flex',
-        justifyContent: 'center'
-    }),
-    dot: {
-        width: '10px',
-        height: '10px',
-        borderRadius: '50%',
-        backgroundColor: '#0050b3',
-        position: 'absolute',
-        top: '-5px',
-        transform: 'translateX(-50%)',
-    },
-    label: {
-        position: 'absolute',
-        top: '-25px',
-        fontSize: '0.8rem',
-        backgroundColor: '#0050b3',
-        color: 'white',
-        padding: '2px 5px',
-        borderRadius: '3px'
-    },
-    chartXAxis: {
-        position: 'absolute',
-        bottom: '-20px',
-        width: '100%',
-        display: 'flex',
-        justifyContent: 'space-around',
-        fontSize: '0.8rem',
-        color: '#777',
-        paddingLeft: '30px'
-    },
-    forecastInsight: {
-        marginTop: '30px',
-        padding: '15px',
-        backgroundColor: '#f6ffed',
-        border: '1px solid #bae637',
-        borderRadius: '4px',
-    },
-    // --- Mock Comparative Chart Styles ---
-    comparativeChartArea: {
-        padding: '10px 0',
-    },
-    barGroup: {
-        marginBottom: '20px',
-    },
-    barLabel: {
-        fontSize: '1rem',
-        marginBottom: '5px',
-        color: '#333',
-        fontWeight: 'bold'
-    },
-    barWrapper: {
-        height: '30px',
-        display: 'flex',
-        alignItems: 'center',
-        position: 'relative',
-        backgroundColor: '#f0f0f0',
-        borderRadius: '4px',
-    },
-    bar: {
-        height: '100%',
-        position: 'absolute',
-        borderRadius: '4px',
-        transition: 'width 0.5s',
-        display: 'flex',
-        alignItems: 'center',
-    },
-    barText: {
-        color: 'white',
-        fontSize: '0.8rem',
-        fontWeight: 'bold',
-        marginLeft: '5px',
-        mixBlendMode: 'difference',
-    },
-    legend: {
-        marginTop: '10px',
-        fontSize: '0.9rem',
-        color: '#555',
-    },
-    legendDot: {
-        display: 'inline-block',
-        width: '10px',
-        height: '10px',
-        borderRadius: '50%',
-        marginRight: '5px',
-    },
-    // --- Mock Radar Chart Styles ---
-    radarPlaceholder: {
-        height: '250px',
-        display: 'flex',
-        flexDirection: 'column',
-        justifyContent: 'center',
-        alignItems: 'center',
-        backgroundColor: '#e6f7ff',
-        border: '2px dashed #91d5ff',
-        borderRadius: '8px',
-        textAlign: 'center'
-    }
+  container: { padding: '30px', backgroundColor: '#f0f2f5', minHeight: '100vh', fontFamily: 'Inter, sans-serif' },
+  backButton: { background: 'none', border: 'none', color: '#1890ff', cursor: 'pointer', marginBottom: '20px', textDecoration: 'underline' },
+  header: { color: '#003a8c', marginBottom: '30px' },
+  kpiGrid: { display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '20px', marginBottom: '30px' },
+  kpiCard: { backgroundColor: 'white', padding: '25px', borderRadius: '12px', boxShadow: '0 4px 12px rgba(0,0,0,0.05)', textAlign: 'center' },
+  kpiTitle: { margin: 0, color: '#666', fontSize: '1rem' },
+  kpiValue: { fontSize: '2.5rem', fontWeight: 'bold', margin: '10px 0' },
+  chartsGrid: { display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))', gap: '20px' },
+  chartCard: { backgroundColor: 'white', padding: '25px', borderRadius: '12px', boxShadow: '0 4px 12px rgba(0,0,0,0.05)' },
+  chartTitle: { margin: '0 0 20px 0', color: '#333' },
+  barContainer: { display: 'flex', flexDirection: 'column', gap: '15px' },
+  barRow: { display: 'flex', alignItems: 'center', gap: '10px' },
+  label: { width: '80px', fontSize: '0.9rem', color: '#555' },
+  bar: { height: '12px', borderRadius: '6px', minWidth: '5px', transition: 'width 0.5s' },
+  count: { fontWeight: 'bold', color: '#333' },
+  actionButton: { width: '100%', padding: '12px', backgroundColor: '#1890ff', color: 'white', border: 'none', borderRadius: '6px', cursor: 'pointer', fontWeight: 'bold' }
 };
 
 export default TherapistAnalytics;

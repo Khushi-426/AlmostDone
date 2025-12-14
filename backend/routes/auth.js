@@ -1,9 +1,10 @@
-// routes/auth.js
+// backend/routes/auth.js
 
 const express = require('express');
 const router = express.Router();
 const jwt = require('jsonwebtoken');
 const User = require('../models/User');
+const auth = require('../middleware/auth'); // <--- ADDED THIS IMPORT
 
 // helper to create JWT
 const createToken = (user) => {
@@ -16,6 +17,19 @@ const createToken = (user) => {
 
   return jwt.sign(payload, process.env.JWT_SECRET, { expiresIn: '5h' });
 };
+
+// ---------------------- GET LOGGED IN USER ----------------------
+// GET /api/auth/user
+// This route is called by the frontend to identify the user from the token
+router.get('/user', auth, async (req, res) => {
+  try {
+    const user = await User.findById(req.user.id).select('-password');
+    res.json(user);
+  } catch (err) {
+    console.error(err.message);
+    res.status(500).send('Server Error');
+  }
+});
 
 // ---------------------- THERAPIST REGISTER ----------------------
 // POST /api/auth/therapist/register

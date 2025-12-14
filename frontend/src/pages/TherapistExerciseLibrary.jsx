@@ -1,166 +1,86 @@
-// frontend/src/pages/TherapistExerciseLibrary.jsx
-
-import React, { useState } from 'react';
-
-// --- MOCK EXERCISE DATA ---
-const MOCK_EXERCISES = [
-  { id: 1, name: 'Bicep Curl', category: 'Arm', difficulty: 'Beginner', target: 'Biceps, Elbow' },
-  { id: 2, name: 'Shoulder Extension', category: 'Shoulder', difficulty: 'Intermediate', target: 'Deltoid, Rotator Cuff' },
-  { id: 3, name: 'Wall Squat', category: 'Leg', difficulty: 'Beginner', target: 'Quads, Knee' },
-  { id: 4, name: 'Hamstring Stretch', category: 'Leg', difficulty: 'Beginner', target: 'Hamstring' },
-  { id: 5, name: 'Lunge with Twist', category: 'Core', difficulty: 'Advanced', target: 'Core, Hips' },
-];
-
-const categories = ['All', 'Arm', 'Shoulder', 'Leg', 'Core'];
+import React, { useState, useEffect } from 'react';
+import axios from 'axios';
+import { useNavigate } from 'react-router-dom';
 
 const TherapistExerciseLibrary = () => {
-  const [filter, setFilter] = useState('All');
-  const [exercises, setExercises] = useState(MOCK_EXERCISES);
+  const navigate = useNavigate();
+  const [exercises, setExercises] = useState([]);
+  const [newExercise, setNewExercise] = useState({ name: '', category: 'Mobility', difficulty: 'Beginner' });
+  const [loading, setLoading] = useState(true);
 
-  const filteredExercises = filter === 'All' 
-    ? exercises 
-    : exercises.filter(e => e.category === filter);
+  // Fetch Exercises from DB
+  useEffect(() => {
+    fetchExercises();
+  }, []);
 
-  // Mock function for Edit action (UI only)
-  const handleEdit = (exerciseName) => {
-    alert(`Mock: Opening edit view for "${exerciseName}"`);
+  const fetchExercises = async () => {
+    try {
+      const res = await axios.get('http://localhost:5001/api/therapist/exercises');
+      setExercises(res.data);
+      setLoading(false);
+    } catch (err) {
+      console.error(err);
+      setLoading(false);
+    }
+  };
+
+  const handleAddExercise = async (e) => {
+    e.preventDefault();
+    try {
+      await axios.post('http://localhost:5001/api/therapist/exercises', newExercise);
+      fetchExercises(); // Refresh list
+      setNewExercise({ name: '', category: 'Mobility', difficulty: 'Beginner' });
+      alert("Exercise Saved to DB!");
+    } catch (err) {
+      alert("Error saving exercise");
+    }
   };
 
   return (
-    <div style={styles.container}>
-      <h1 style={styles.header}>Exercise Library Management</h1>
-      <div style={styles.controls}>
-        <div style={styles.filterGroup}>
-          <strong style={{ marginRight: '10px' }}>Filter by Category:</strong>
-          {categories.map(cat => (
-            <button
-              key={cat}
-              onClick={() => setFilter(cat)}
-              style={{ ...styles.filterButton, ...(filter === cat ? styles.activeFilter : {}) }}
-            >
-              {cat}
-            </button>
-          ))}
-        </div>
-        <button style={styles.addButton}>+ Add New Exercise</button>
+    <div className="p-8 bg-gray-50 min-h-screen">
+      <button onClick={() => navigate('/therapist-dashboard')} className="mb-4 text-blue-600 underline">← Back</button>
+      <h1 className="text-3xl font-bold mb-6 text-gray-800">Exercise Library</h1>
+      
+      {/* Add Exercise Form */}
+      <div className="bg-white p-6 rounded-lg shadow mb-8">
+        <h3 className="text-xl font-bold mb-4">Add New Exercise</h3>
+        <form onSubmit={handleAddExercise} className="flex gap-4">
+          <input 
+            className="border p-2 rounded flex-1" 
+            placeholder="Exercise Name (e.g. Squat)" 
+            value={newExercise.name}
+            onChange={(e) => setNewExercise({...newExercise, name: e.target.value})}
+            required
+          />
+          <select 
+            className="border p-2 rounded"
+            value={newExercise.category}
+            onChange={(e) => setNewExercise({...newExercise, category: e.target.value})}
+          >
+            <option>Mobility</option><option>Strength</option><option>Balance</option>
+          </select>
+          <select 
+            className="border p-2 rounded"
+            value={newExercise.difficulty}
+            onChange={(e) => setNewExercise({...newExercise, difficulty: e.target.value})}
+          >
+            <option>Beginner</option><option>Intermediate</option><option>Advanced</option>
+          </select>
+          <button type="submit" className="bg-blue-600 text-white px-4 py-2 rounded">Add to DB</button>
+        </form>
       </div>
 
-      <div style={styles.grid}>
-        {filteredExercises.map(exercise => (
-          <div key={exercise.id} style={styles.card}>
-            <span style={styles.tag}>{exercise.category}</span>
-            <h2 style={styles.cardTitle}>{exercise.name}</h2>
-            <p style={styles.cardDetail}><strong>Target:</strong> {exercise.target}</p>
-            <p style={{...styles.cardDetail, color: styles.difficultyColors[exercise.difficulty]}}>
-              <strong>Difficulty:</strong> {exercise.difficulty}
-            </p>
-            <div style={styles.cardActions}>
-              <button style={styles.actionButton} onClick={() => alert(`Mock: Viewing details for ${exercise.name}`)}>
-                View
-              </button>
-              <button 
-                style={{ ...styles.actionButton, backgroundColor: '#faad14' }} 
-                onClick={() => handleEdit(exercise.name)}
-              >
-                Edit
-              </button>
-            </div>
+      {/* List */}
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+        {exercises.map(ex => (
+          <div key={ex.id} className="bg-white p-6 rounded-lg shadow border-l-4 border-blue-500">
+            <h3 className="font-bold text-xl">{ex.name}</h3>
+            <p className="text-gray-600">Category: {ex.category}</p>
+            <p className="text-gray-600">Difficulty: {ex.difficulty}</p>
           </div>
         ))}
       </div>
-      {filteredExercises.length === 0 && (
-        <p style={styles.emptyState}>No exercises found for this category.</p>
-      )}
     </div>
   );
 };
-
-// --- Styles ---
-const styles = {
-  container: { padding: '30px', backgroundColor: '#f0f2f5', minHeight: '100vh' },
-  header: { color: '#0050b3', borderBottom: '2px solid #e8e8e8', paddingBottom: '15px', marginBottom: '20px' },
-  controls: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '25px' },
-  filterGroup: { display: 'flex', alignItems: 'center', flexWrap: 'wrap' },
-  filterButton: { 
-    padding: '8px 15px', 
-    marginRight: '10px', 
-    backgroundColor: '#fff', 
-    border: '1px solid #d9d9d9', 
-    borderRadius: '4px', 
-    cursor: 'pointer' 
-  },
-  activeFilter: { 
-    backgroundColor: '#0050b3', 
-    color: 'white', 
-    borderColor: '#0050b3' 
-  },
-  addButton: { 
-    padding: '10px 20px', 
-    backgroundColor: '#52c41a', 
-    color: 'white', 
-    border: 'none', 
-    borderRadius: '4px', 
-    cursor: 'pointer', 
-    fontWeight: 'bold' 
-  },
-  grid: { 
-    display: 'grid', 
-    gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', 
-    gap: '20px' 
-  },
-  card: { 
-    backgroundColor: 'white', 
-    padding: '20px', 
-    borderRadius: '8px', 
-    boxShadow: '0 4px 10px rgba(0,0,0,0.05)',
-    position: 'relative',
-    borderLeft: '5px solid #0050b3'
-  },
-  tag: { 
-    position: 'absolute', 
-    top: '15px', 
-    right: '15px', 
-    backgroundColor: '#e6f7ff', 
-    color: '#0050b3', 
-    padding: '4px 8px', 
-    borderRadius: '4px', 
-    fontSize: '0.8rem' 
-  },
-  cardTitle: { 
-    fontSize: '1.4rem', 
-    margin: '0 0 10px 0', 
-    color: '#333' 
-  },
-  cardDetail: { 
-    margin: '5px 0', 
-    fontSize: '0.95rem' 
-  },
-  difficultyColors: {
-    Beginner: 'green',
-    Intermediate: 'orange',
-    Advanced: 'red',
-  },
-  cardActions: { 
-    marginTop: '15px', 
-    display: 'flex', 
-    gap: '10px' 
-  },
-  actionButton: {
-    padding: '8px 15px',
-    backgroundColor: '#0050b3',
-    color: 'white',
-    border: 'none',
-    borderRadius: '4px',
-    cursor: 'pointer',
-  },
-  emptyState: { 
-    textAlign: 'center', 
-    padding: '40px', 
-    backgroundColor: '#fff', 
-    borderRadius: '8px', 
-    border: '1px dashed #ccc', 
-    marginTop: '20px' 
-  }
-};
-
 export default TherapistExerciseLibrary;

@@ -1,375 +1,286 @@
-// frontend/src/pages/TherapistProtocolManager.jsx
+import React, { useState, useEffect } from 'react';
+import axios from 'axios';
+import { useNavigate } from 'react-router-dom';
 
-import React, { useState } from 'react';
+const TherapistProtocolManager = () => {
+  const navigate = useNavigate();
+  const [activeTab, setActiveTab] = useState('create'); 
 
-// --- MOCK DATA ---
-const MOCK_PATIENTS = [
-  { id: 101, name: 'Alice Smith', email: 'alice.s@example.com', currentProtocol: { name: 'Knee Rehab V2', exercises: 2, lastUpdated: '2025-12-10' } },
-  { id: 102, name: 'Bob Johnson', email: 'bob.j@example.com', currentProtocol: { name: 'Shoulder Post-op', exercises: 4, lastUpdated: '2025-11-28' } },
-  { id: 103, name: 'Charlie Brown', email: 'charlie.b@example.com', currentProtocol: null },
-];
-const MOCK_EXERCISES = [
-  { id: 1, name: 'Bicep Curl', difficulty: 'Beginner', defaultSets: 3, defaultReps: 10 },
-  { id: 2, name: 'Shoulder Extension', difficulty: 'Intermediate', defaultSets: 4, defaultReps: 8 },
-  { id: 3, name: 'Wall Squat', difficulty: 'Beginner', defaultSets: 3, defaultReps: 12 },
-  { id: 4, name: 'Hamstring Stretch', difficulty: 'Beginner', defaultSets: 5, defaultReps: 30 },
-];
+  // --- REAL STATE (No more Mocks) ---
+  const [exercises, setExercises] = useState([]);
+  const [patients, setPatients] = useState([]);
+  const [protocols, setProtocols] = useState([]);
+  const [loading, setLoading] = useState(true);
 
-// --- Sub-components (Simplified for clarity) ---
-
-const CreateProtocol = () => {
+  // --- FORM STATE ---
   const [protocolName, setProtocolName] = useState('');
   const [selectedExercises, setSelectedExercises] = useState([]);
-  const [step, setStep] = useState(1);
+  const [selectedPatients, setSelectedPatients] = useState([]);
+  const [step, setStep] = useState(1); // 1 = Define, 2 = Assign
 
-  const handleAddExercise = (exercise) => {
-    setSelectedExercises([...selectedExercises, { 
-      ...exercise, 
-      sets: exercise.defaultSets, 
-      reps: exercise.defaultReps, 
-      difficulty: exercise.difficulty 
-    }]);
+  // --- 1. FETCH INITIAL DATA FROM DB ---
+  useEffect(() => {
+    const fetchData = async () => {
+      try {
+        const [exRes, patRes, protRes] = await Promise.all([
+          axios.get('http://localhost:5001/api/therapist/exercises'),
+          axios.get('http://localhost:5001/api/therapist/patients'),
+          axios.get('http://localhost:5001/api/therapist/protocols')
+        ]);
+
+        setExercises(exRes.data);
+        setPatients(patRes.data.patients || patRes.data); // Handle different response structures
+        setProtocols(protRes.data);
+        setLoading(false);
+      } catch (err) {
+        console.error("Error fetching data:", err);
+        setLoading(false);
+      }
+    };
+    fetchData();
+  }, []);
+
+  // --- HANDLERS ---
+
+  const handleAddExerciseToProtocol = (exercise) => {
+    // Add exercise with default values
+    setSelectedExercises([
+      ...selectedExercises, 
+      { 
+        id: exercise.id, // Keep ID for backend reference
+        name: exercise.name, 
+        sets: 3, 
+        reps: 10 
+      }
+    ]);
   };
 
-  const handleProtocolAssignment = () => {
-    if (!protocolName) return alert('Please enter a protocol name.');
-    if (selectedExercises.length === 0) return alert('Please add at least one exercise.');
-    setStep(2);
+  const handleUpdateExerciseDetail = (index, field, value) => {
+    const updated = [...selectedExercises];
+    updated[index][field] = value;
+    setSelectedExercises(updated);
   };
 
-  const handleFinalAssignment = () => {
-    alert(`Mock: Protocol "${protocolName}" assigned to selected patients!`);
-    // Reset or navigate
-    setStep(1);
-    setProtocolName('');
-    setSelectedExercises([]);
+  const handleTogglePatient = (email) => {
+    if (selectedPatients.includes(email)) {
+      setSelectedPatients(selectedPatients.filter(e => e !== email));
+    } else {
+      setSelectedPatients([...selectedPatients, email]);
+    }
   };
 
-  if (step === 2) {
-    return (
-      <div style={styles.stepContainer}>
-        <h2>Step 2: Assign Protocol to Patients</h2>
-        <p>Protocol: <strong>{protocolName}</strong> ({selectedExercises.length} exercises)</p>
-        <div style={{ marginTop: '20px' }}>
-          {MOCK_PATIENTS.map(patient => (
-            <div key={patient.id} style={styles.patientSelectCard}>
-              <input type="checkbox" id={`patient-${patient.id}`} style={{ marginRight: '10px' }} />
-              <label htmlFor={`patient-${patient.id}`}>{patient.name} ({patient.email})</label>
-            </div>
-          ))}
-        </div>
-        <button style={styles.backButton} onClick={() => setStep(1)}>
-          &larr; Back
-        </button>
-        <button style={styles.assignButton} onClick={handleFinalAssignment}>
-          Assign Protocol Now
-        </button>
-      </div>
-    );
-  }
+  const handleSubmitProtocol = async () => {
+    if (!protocolName || selectedExercises.length === 0 || selectedPatients.length === 0) {
+      alert("Please complete all fields (Name, Exercises, and Patients)");
+      return;
+    }
 
-  return (
-    <div>
-      <h2 style={styles.sectionHeader}>Define Protocol</h2>
-      <input 
-        type="text" 
-        placeholder="Protocol Name (e.g., Post-Op Knee Day 1)" 
-        value={protocolName}
-        onChange={(e) => setProtocolName(e.target.value)}
-        style={styles.inputField}
-      />
+    try {
+      const payload = {
+        name: protocolName,
+        exercises: selectedExercises,
+        assigned_patients: selectedPatients
+      };
+
+      // POST to backend
+      await axios.post('http://localhost:5001/api/therapist/protocols', payload);
       
-      <h3 style={{marginTop: '20px'}}>Selected Exercises ({selectedExercises.length})</h3>
-      {selectedExercises.map((exercise, index) => (
-        <div key={index} style={styles.selectedExerciseCard}>
-          <span>{exercise.name}</span>
-          <input 
-            type="number" 
-            placeholder="Sets" 
-            value={exercise.sets} 
-            onChange={(e) => {
-              const newExs = [...selectedExercises];
-              newExs[index].sets = e.target.value;
-              setSelectedExercises(newExs);
-            }}
-            style={styles.smallInputField}
-          />
-          <input 
-            type="number" 
-            placeholder="Reps" 
-            value={exercise.reps} 
-            onChange={(e) => {
-              const newExs = [...selectedExercises];
-              newExs[index].reps = e.target.value;
-              setSelectedExercises(newExs);
-            }}
-            style={styles.smallInputField}
-          />
-        </div>
-      ))}
-      <button 
-        onClick={handleProtocolAssignment} 
-        style={{...styles.createButton, opacity: selectedExercises.length > 0 ? 1 : 0.5}}
-        disabled={selectedExercises.length === 0}
-      >
-        Next: Assign to Patients
-      </button>
+      alert("✅ Protocol Created & Assigned Successfully!");
+      
+      // Reset Form
+      setStep(1);
+      setProtocolName('');
+      setSelectedExercises([]);
+      setSelectedPatients([]);
+      
+      // Refresh Protocol List
+      const res = await axios.get('http://localhost:5001/api/therapist/protocols');
+      setProtocols(res.data);
 
-      <h3 style={{marginTop: '30px', borderTop: '1px solid #eee', paddingTop: '20px'}}>Exercise Picker</h3>
-      <div style={styles.exercisePickerGrid}>
-        {MOCK_EXERCISES.map(exercise => (
-          <div key={exercise.id} style={styles.pickerCard}>
-            <strong>{exercise.name}</strong>
-            <p style={{fontSize: '0.8rem'}}>Sets: {exercise.defaultSets}, Reps: {exercise.defaultReps}</p>
-            <button 
-              onClick={() => handleAddExercise(exercise)} 
-              style={styles.pickerButton}
-            >
-              + Add
-            </button>
-          </div>
-        ))}
-      </div>
-    </div>
-  );
-};
-
-const ModifyProtocol = () => {
-  // Mock logic for viewing/modifying an existing protocol
-  const [selectedPatient, setSelectedPatient] = useState(MOCK_PATIENTS[0]);
-  const [isModified, setIsModified] = useState(false);
-
-  if (!selectedPatient.currentProtocol) {
-    return (
-        <div style={styles.emptyState}>
-            No active protocol for {selectedPatient.name}.
-        </div>
-    );
-  }
-  
-  const handleSaveModification = () => {
-    setIsModified(true);
-    setTimeout(() => setIsModified(false), 3000); // UI feedback
-    alert(`Mock: Protocol for ${selectedPatient.name} updated!`);
+    } catch (err) {
+      console.error(err);
+      alert("Failed to save protocol.");
+    }
   };
 
-  return (
-    <div>
-        <h2 style={styles.sectionHeader}>Modify Active Protocol</h2>
-        <select 
-            onChange={(e) => setSelectedPatient(MOCK_PATIENTS.find(p => p.id === parseInt(e.target.value)))}
-            style={styles.inputField}
-            defaultValue={selectedPatient.id}
-        >
-            {MOCK_PATIENTS.map(p => (
-                <option key={p.id} value={p.id}>{p.name}</option>
-            ))}
-        </select>
-        
-        <div style={styles.protocolDetails}>
-            <h3>{selectedPatient.currentProtocol.name}</h3>
-            <p>Last Modified: {selectedPatient.currentProtocol.lastUpdated}</p>
-            {isModified && <p style={styles.successMessage}>✅ Protocol Updated Successfully!</p>}
-            
-            {/* Mock Exercise List with modification fields */}
-            {[...Array(selectedPatient.currentProtocol.exercises)].map((_, index) => (
-                <div key={index} style={styles.selectedExerciseCard}>
-                    <span>Mock Exercise {index + 1}</span>
-                    <input type="number" defaultValue={index === 0 ? 3 : 4} style={styles.smallInputField} />
-                    <input type="number" defaultValue={index === 0 ? 10 : 8} style={styles.smallInputField} />
-                    <select style={styles.smallInputField} defaultValue={index === 0 ? 'Beginner' : 'Intermediate'}>
-                        <option>Beginner</option>
-                        <option>Intermediate</option>
-                        <option>Advanced</option>
-                    </select>
-                </div>
-            ))}
-            
-            <button style={styles.saveButton} onClick={handleSaveModification}>
-                Save Modifications
-            </button>
-        </div>
-    </div>
-  );
-};
-
-// --- Main Component ---
-const TherapistProtocolManager = () => {
-  const [activeTab, setActiveTab] = useState('create'); // 'create' or 'modify'
+  if (loading) return <div className="p-10 text-center">Loading Library & Patients...</div>;
 
   return (
     <div style={styles.container}>
-      <h1 style={styles.header}>Protocol Manager</h1>
+      <button onClick={() => navigate('/therapist-dashboard')} style={styles.backLink}>
+         ← Back to Dashboard
+      </button>
       
+      <h1 style={styles.header}>Protocol Manager</h1>
+
+      {/* TABS */}
       <div style={styles.tabContainer}>
         <button 
           onClick={() => setActiveTab('create')} 
           style={{...styles.tabButton, ...(activeTab === 'create' ? styles.activeTab : {})}}
         >
-          Create & Assign New Protocol
+          Create New Protocol
         </button>
         <button 
-          onClick={() => setActiveTab('modify')} 
-          style={{...styles.tabButton, ...(activeTab === 'modify' ? styles.activeTab : {})}}
+          onClick={() => setActiveTab('view')} 
+          style={{...styles.tabButton, ...(activeTab === 'view' ? styles.activeTab : {})}}
         >
-          View & Modify Protocols
+          View Active Protocols
         </button>
       </div>
 
       <div style={styles.content}>
-        {activeTab === 'create' && <CreateProtocol />}
-        {activeTab === 'modify' && <ModifyProtocol />}
+        
+        {/* --- VIEW 1: CREATE PROTOCOL --- */}
+        {activeTab === 'create' && (
+          <div>
+            {step === 1 ? (
+              // STEP 1: DEFINE EXERCISES
+              <div>
+                <h2 style={styles.sectionHeader}>Step 1: Define Protocol</h2>
+                <input 
+                  type="text" 
+                  placeholder="Protocol Name (e.g. ACL Rehab Phase 1)" 
+                  value={protocolName}
+                  onChange={(e) => setProtocolName(e.target.value)}
+                  style={styles.inputField}
+                />
+
+                {/* Selected Exercises List */}
+                <h3 style={{marginTop:'20px'}}>Selected Exercises ({selectedExercises.length})</h3>
+                {selectedExercises.length === 0 && <p style={{color:'#888', fontStyle:'italic'}}>No exercises added yet. Click from library below.</p>}
+                
+                {selectedExercises.map((ex, idx) => (
+                  <div key={idx} style={styles.selectedExerciseCard}>
+                    <strong>{ex.name}</strong>
+                    <div>
+                      <label style={{fontSize:'0.8rem', marginRight:'5px'}}>Sets:</label>
+                      <input 
+                        type="number" 
+                        value={ex.sets} 
+                        onChange={(e) => handleUpdateExerciseDetail(idx, 'sets', e.target.value)}
+                        style={styles.smallInputField} 
+                      />
+                      <label style={{fontSize:'0.8rem', margin:'0 5px'}}>Reps:</label>
+                      <input 
+                        type="number" 
+                        value={ex.reps} 
+                        onChange={(e) => handleUpdateExerciseDetail(idx, 'reps', e.target.value)}
+                        style={styles.smallInputField} 
+                      />
+                    </div>
+                  </div>
+                ))}
+
+                <button 
+                  onClick={() => selectedExercises.length > 0 && setStep(2)}
+                  disabled={selectedExercises.length === 0}
+                  style={selectedExercises.length > 0 ? styles.createButton : styles.disabledButton}
+                >
+                  Next: Assign Patients →
+                </button>
+
+                {/* Exercise Library Picker */}
+                <div style={{marginTop: '40px', borderTop:'1px solid #eee', paddingTop:'20px'}}>
+                  <h3 style={{marginBottom:'15px', color:'#555'}}>Exercise Library (Click to Add)</h3>
+                  <div style={styles.exercisePickerGrid}>
+                    {exercises.map(ex => (
+                      <div key={ex.id} style={styles.pickerCard}>
+                        <div style={{fontWeight:'bold', color:'#2c3e50'}}>{ex.name}</div>
+                        <div style={{fontSize:'0.8rem', color:'#7f8c8d'}}>{ex.difficulty}</div>
+                        <button onClick={() => handleAddExerciseToProtocol(ex)} style={styles.addButton}>
+                          + Add
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            ) : (
+              // STEP 2: ASSIGN PATIENTS
+              <div style={styles.stepContainer}>
+                <h2 style={styles.sectionHeader}>Step 2: Assign to Patients</h2>
+                <p>Who should receive the <strong>"{protocolName}"</strong> protocol?</p>
+                
+                <div style={styles.patientListContainer}>
+                  {patients.map(p => (
+                    <div key={p.id} style={styles.patientSelectCard}>
+                      <input 
+                        type="checkbox" 
+                        checked={selectedPatients.includes(p.email)}
+                        onChange={() => handleTogglePatient(p.email)}
+                        id={`p-${p.id}`}
+                        style={{transform: 'scale(1.2)', marginRight:'10px'}}
+                      />
+                      <label htmlFor={`p-${p.id}`} style={{cursor:'pointer', width:'100%'}}>
+                        <span style={{fontWeight:'bold'}}>{p.name}</span>
+                        <span style={{color:'#888', marginLeft:'10px'}}>({p.email})</span>
+                      </label>
+                    </div>
+                  ))}
+                </div>
+
+                <div style={{display:'flex', justifyContent:'space-between', marginTop:'20px'}}>
+                  <button onClick={() => setStep(1)} style={styles.backButton}>← Back</button>
+                  <button onClick={handleSubmitProtocol} style={styles.assignButton}>
+                    Confirm & Assign Protocol
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* --- VIEW 2: ACTIVE PROTOCOLS --- */}
+        {activeTab === 'view' && (
+          <div>
+            <h2 style={styles.sectionHeader}>Active Protocols</h2>
+            {protocols.length === 0 ? (
+              <p style={{color:'#888'}}>No protocols created yet.</p>
+            ) : (
+              <div style={{display:'grid', gap:'15px'}}>
+                {protocols.map(p => (
+                  <div key={p.id} style={styles.protocolCard}>
+                    <h3 style={{margin:'0 0 5px 0', color:'#0050b3'}}>{p.name}</h3>
+                    <div style={{fontSize:'0.9rem', color:'#555'}}>
+                      <p><strong>Exercises:</strong> {p.exercises?.length || 0}</p>
+                      <p><strong>Assigned Patients:</strong> {p.assigned_patients?.length || 0}</p>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
       </div>
     </div>
   );
 };
 
-// --- Styles ---
+// --- STYLES ---
 const styles = {
-  container: { padding: '30px', backgroundColor: '#f0f2f5', minHeight: '100vh' },
+  container: { padding: '30px', backgroundColor: '#f0f2f5', minHeight: '100vh', fontFamily: 'Inter, sans-serif' },
+  backLink: { background: 'none', border: 'none', color: '#1890ff', cursor: 'pointer', marginBottom: '15px', padding: 0, textDecoration: 'underline' },
   header: { color: '#0050b3', borderBottom: '2px solid #e8e8e8', paddingBottom: '15px', marginBottom: '20px' },
   tabContainer: { display: 'flex', marginBottom: '20px' },
-  tabButton: { 
-    padding: '10px 20px', 
-    border: 'none', 
-    backgroundColor: '#e6f7ff', 
-    cursor: 'pointer', 
-    fontSize: '1rem',
-    borderBottom: '3px solid transparent'
-  },
-  activeTab: { 
-    backgroundColor: 'white', 
-    borderBottom: '3px solid #0050b3', 
-    fontWeight: 'bold' 
-  },
-  content: { 
-    backgroundColor: 'white', 
-    padding: '30px', 
-    borderRadius: '8px', 
-    boxShadow: '0 2px 8px rgba(0,0,0,0.1)' 
-  },
-  sectionHeader: { 
-    color: '#0050b3', 
-    marginBottom: '15px' 
-  },
-  inputField: { 
-    width: '100%', 
-    padding: '10px', 
-    marginBottom: '15px', 
-    borderRadius: '4px', 
-    border: '1px solid #d9d9d9' 
-  },
-  smallInputField: {
-    width: '80px',
-    padding: '8px',
-    marginLeft: '10px',
-    borderRadius: '4px',
-    border: '1px solid #d9d9d9'
-  },
-  selectedExerciseCard: {
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    padding: '10px 15px',
-    border: '1px solid #eee',
-    borderRadius: '4px',
-    marginBottom: '8px'
-  },
-  exercisePickerGrid: {
-    display: 'grid',
-    gridTemplateColumns: 'repeat(auto-fill, minmax(180px, 1fr))',
-    gap: '15px'
-  },
-  pickerCard: {
-    padding: '15px',
-    border: '1px solid #bae637',
-    backgroundColor: '#f6ffed',
-    borderRadius: '4px',
-    textAlign: 'center'
-  },
-  pickerButton: {
-    padding: '6px 12px',
-    backgroundColor: '#52c41a',
-    color: 'white',
-    border: 'none',
-    borderRadius: '4px',
-    marginTop: '10px',
-    cursor: 'pointer'
-  },
-  createButton: {
-    padding: '12px 25px',
-    backgroundColor: '#0050b3',
-    color: 'white',
-    border: 'none',
-    borderRadius: '4px',
-    cursor: 'pointer',
-    marginTop: '20px',
-    fontWeight: 'bold',
-    float: 'right'
-  },
-  stepContainer: { 
-    border: '2px dashed #0050b3', 
-    padding: '25px', 
-    borderRadius: '8px' 
-  },
-  patientSelectCard: { 
-    padding: '10px', 
-    borderBottom: '1px solid #eee' 
-  },
-  backButton: {
-    padding: '10px 20px', 
-    backgroundColor: '#f5f5f5', 
-    color: '#333',
-    border: '1px solid #d9d9d9', 
-    borderRadius: '4px', 
-    cursor: 'pointer', 
-    marginTop: '20px',
-  },
-  assignButton: {
-    padding: '10px 20px', 
-    backgroundColor: '#52c41a', 
-    color: 'white',
-    border: 'none', 
-    borderRadius: '4px', 
-    cursor: 'pointer', 
-    marginTop: '20px',
-    marginLeft: '15px',
-    fontWeight: 'bold'
-  },
-  protocolDetails: {
-    border: '1px solid #d9d9d9',
-    padding: '20px',
-    borderRadius: '4px',
-    marginTop: '15px'
-  },
-  saveButton: {
-    padding: '10px 20px',
-    backgroundColor: '#faad14',
-    color: 'white',
-    border: 'none',
-    borderRadius: '4px',
-    cursor: 'pointer',
-    marginTop: '20px',
-    fontWeight: 'bold'
-  },
-  successMessage: {
-    color: 'green',
-    fontWeight: 'bold',
-    border: '1px solid #bae637',
-    backgroundColor: '#f6ffed',
-    padding: '8px',
-    borderRadius: '4px',
-    marginBottom: '10px'
-  },
-  emptyState: { 
-    textAlign: 'center', 
-    padding: '40px', 
-    backgroundColor: '#fff', 
-    borderRadius: '8px', 
-    border: '1px dashed #ccc', 
-    marginTop: '20px',
-    color: '#999'
-  }
+  tabButton: { padding: '12px 25px', border: 'none', backgroundColor: '#e6f7ff', cursor: 'pointer', fontSize: '1rem', marginRight:'5px', borderRadius:'8px 8px 0 0' },
+  activeTab: { backgroundColor: 'white', fontWeight: 'bold', borderTop:'3px solid #0050b3' },
+  content: { backgroundColor: 'white', padding: '30px', borderRadius: '0 8px 8px 8px', boxShadow: '0 2px 8px rgba(0,0,0,0.1)' },
+  sectionHeader: { color: '#333', marginBottom: '15px' },
+  inputField: { width: '100%', padding: '12px', marginBottom: '15px', borderRadius: '6px', border: '1px solid #d9d9d9', fontSize:'1rem' },
+  smallInputField: { width: '70px', padding: '5px', borderRadius: '4px', border: '1px solid #d9d9d9' },
+  selectedExerciseCard: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '15px', border: '1px solid #e8e8e8', borderRadius: '6px', marginBottom: '10px', backgroundColor:'#fafafa' },
+  exercisePickerGrid: { display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(200px, 1fr))', gap: '15px' },
+  pickerCard: { padding: '15px', border: '1px solid #bae7ff', backgroundColor: '#e6f7ff', borderRadius: '6px', textAlign: 'center', cursor:'pointer', transition:'0.2s' },
+  addButton: { marginTop:'10px', backgroundColor:'#1890ff', color:'white', border:'none', padding:'5px 15px', borderRadius:'15px', cursor:'pointer' },
+  createButton: { padding: '12px 30px', backgroundColor: '#0050b3', color: 'white', border: 'none', borderRadius: '6px', cursor: 'pointer', marginTop: '20px', fontWeight: 'bold', float:'right' },
+  disabledButton: { padding: '12px 30px', backgroundColor: '#ccc', color: '#666', border: 'none', borderRadius: '6px', marginTop: '20px', float:'right', cursor:'not-allowed' },
+  stepContainer: { border: '1px solid #e8e8e8', padding: '25px', borderRadius: '8px' },
+  patientListContainer: { maxHeight:'300px', overflowY:'auto', border:'1px solid #eee', borderRadius:'6px', marginTop:'15px' },
+  patientSelectCard: { display:'flex', alignItems:'center', padding: '12px', borderBottom: '1px solid #eee' },
+  backButton: { padding: '10px 20px', backgroundColor: '#f5f5f5', border: '1px solid #ddd', borderRadius: '6px', cursor: 'pointer' },
+  assignButton: { padding: '10px 25px', backgroundColor: '#52c41a', color: 'white', border: 'none', borderRadius: '6px', cursor: 'pointer', fontWeight: 'bold' },
+  protocolCard: { border:'1px solid #e8e8e8', padding:'20px', borderRadius:'8px', backgroundColor:'#fafafa', borderLeft:'4px solid #1890ff' }
 };
 
 export default TherapistProtocolManager;
