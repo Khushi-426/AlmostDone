@@ -39,7 +39,6 @@ CORS(app)
 bcrypt = Bcrypt(app)
 
 
-# [Change] Initialize SocketIO with async_mode to ensure non-blocking behavior
 # Initialize SocketIO with async_mode to ensure non-blocking behavior
 socketio = SocketIO(app, cors_allowed_origins="*", async_mode='threading')
 
@@ -92,7 +91,6 @@ except Exception as e:
 workout_session = None
 
 
-# [Change] Modified to accept exercise_name
 def init_session(exercise_name="Bicep Curl"): 
     """Initialize workout session logic"""
     global workout_session
@@ -164,7 +162,7 @@ def handle_disconnect():
     print('Client disconnected')
 
 
-# [Change] Socket-based Stop command 
+# Socket-based Stop command 
 @socketio.on('stop_session')
 def handle_stop_session(data):
     print("Received stop command via Socket")
@@ -314,62 +312,7 @@ def get_analytics_detailed():
         email = request.json.get('email')
         if not email:
             return jsonify({'error': 'Email required'}), 400
-
-
-@app.route('/api/user/ai_prediction', methods=['POST'])
-def get_ai_prediction():
-    if sessions_collection is None: return jsonify({'error': 'DB Error'}), 503
-    sessions = list(sessions_collection.find({'email': request.json.get('email')}).sort('timestamp', 1))
-    return jsonify(AIEngine.get_recovery_prediction(sessions) if sessions else {'error': 'No data'})
-
-
-@app.route('/api/exercises', methods=['GET']) 
-def get_exercises():
-    """Returns the list of configured exercises for the frontend."""
-    return jsonify(_get_frontend_exercise_list()), 200
-
-
-@app.route('/start_tracking', methods=['GET', 'POST']) 
-def start_tracking():
-    global workout_session
-    
-    exercise_name = 'Bicep Curl' # Default exercise
-    
-    # Try to get exercise name from JSON body if it's a POST request
-    if request.method == 'POST':
-        try:
-            # CRITICAL: Retrieve the 'exercise' name sent from the frontend
-            exercise_name = request.json.get('exercise', 'Bicep Curl') 
-        except:
-            # If JSON is invalid or missing, stick with default
-            pass
-    
-    if workout_session:
-        try: workout_session.stop()
-        except: pass
-    try:
-        # Pass the specific exercise name to initialization
-        init_session(exercise_name=exercise_name) 
-        workout_session.start()
-        return jsonify({'status': 'success', 'message': f'Session started for {exercise_name}'}), 200
-    except Exception as e:
-        # Log the full exception for debugging
-        print(f"Exception during start_tracking: {e}")
-        return jsonify({'status': 'error', 'message': f'Failed to start: {e}'}), 500
-
-
-# Keep this for backward compatibility, but we use Socket for stopping now
-@app.route('/stop_tracking', methods=['POST'])
-def stop_tracking_http():
-    global workout_session
-    if not workout_session: return jsonify({'status': 'inactive'})
-    try:
-        workout_session.stop()
-        return jsonify({'status': 'success'})
-    except Exception as e:
-        return jsonify({'status': 'error'}), 500
-
-
+        
         # 1. Fetch all sessions for this user, sorted by newest first
         sessions = list(sessions_collection.find({'email': email}).sort('timestamp', -1))
         
@@ -431,6 +374,62 @@ def stop_tracking_http():
     except Exception as e:
         print(f"Analytics Error: {e}")
         return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/user/ai_prediction', methods=['POST'])
+def get_ai_prediction():
+    if sessions_collection is None: return jsonify({'error': 'DB Error'}), 503
+    sessions = list(sessions_collection.find({'email': request.json.get('email')}).sort('timestamp', 1))
+    return jsonify(AIEngine.get_recovery_prediction(sessions) if sessions else {'error': 'No data'})
+
+
+@app.route('/api/exercises', methods=['GET']) 
+def get_exercises():
+    """Returns the list of configured exercises for the frontend."""
+    return jsonify(_get_frontend_exercise_list()), 200
+
+
+@app.route('/start_tracking', methods=['GET', 'POST']) 
+def start_tracking():
+    global workout_session
+    
+    exercise_name = 'Bicep Curl' # Default exercise
+    
+    # Try to get exercise name from JSON body if it's a POST request
+    if request.method == 'POST':
+        try:
+            # CRITICAL: Retrieve the 'exercise' name sent from the frontend
+            exercise_name = request.json.get('exercise', 'Bicep Curl') 
+        except:
+            # If JSON is invalid or missing, stick with default
+            pass
+    
+    if workout_session:
+        try: workout_session.stop()
+        except: pass
+    try:
+        # Pass the specific exercise name to initialization
+        init_session(exercise_name=exercise_name) 
+        workout_session.start()
+        return jsonify({'status': 'success', 'message': f'Session started for {exercise_name}'}), 200
+    except Exception as e:
+        # Log the full exception for debugging
+        print(f"Exception during start_tracking: {e}")
+        return jsonify({'status': 'error', 'message': f'Failed to start: {e}'}), 500
+
+
+# Keep this for backward compatibility, but we use Socket for stopping now
+@app.route('/stop_tracking', methods=['POST'])
+def stop_tracking_http():
+    global workout_session
+    if not workout_session: return jsonify({'status': 'inactive'})
+    try:
+        workout_session.stop()
+        return jsonify({'status': 'success'})
+    except Exception as e:
+        return jsonify({'status': 'error'}), 500
+
+
 @app.route('/video_feed')
 def video_feed():
     return Response(generate_video_frames(), mimetype='multipart/x-mixed-replace; boundary=frame')
@@ -447,3 +446,5 @@ if __name__ == '__main__':
     init_session()
     # Use socketio.run instead of app.run
     socketio.run(app, host='0.0.0.0', port=5001, debug=True)
+
+# namespace std
