@@ -68,8 +68,8 @@ class AIEngine:
             # Calculate real accuracy based on recorded errors
             acc = 100
             if reps > 0:
-                # Heuristic weighting: 1 error penalizes 20% accuracy
-                acc = max(0, 100 - int((errors / reps) * 20))
+                # Standard calculation: (Total Reps - Errors) / Total Reps * 100
+                acc = max(0, int((reps - errors) / reps * 100)) # << FIX APPLIED: Changed heuristic to standard accuracy
             
             date_str = s.get('date', 'Unknown')
             history.append({
@@ -151,8 +151,8 @@ class AIEngine:
             reps = s.get('total_reps', 1) or 1
             errors = s.get('total_errors', 0)
             
-            # Use stored accuracy if available, else calculate
-            acc = max(0, 100 - int((errors / reps) * 20))
+            # Calculate accuracy based on successful reps (Reps - Errors) / Reps
+            acc = max(0, int((reps - errors) / reps * 100)) # << FIX APPLIED: Changed heuristic to standard accuracy
             
             # Predict ROM based on Accuracy (Better form = Better ROM potential)
             base_rom = 85 + (acc * 0.5) 
@@ -171,7 +171,8 @@ class AIEngine:
         for s in recent_sessions:
             reps = s.get('total_reps', 1) or 1
             errors = s.get('total_errors', 0)
-            acc = max(0, 100 - int((errors / reps) * 20))
+            # Calculate accuracy based on successful reps (Reps - Errors) / Reps
+            acc = max(0, int((reps - errors) / reps * 100)) # << FIX APPLIED: Changed heuristic to standard accuracy
             
             base_rom = 85 + (acc * 0.5)
             rom_val = min(145, max(60, int(base_rom)))

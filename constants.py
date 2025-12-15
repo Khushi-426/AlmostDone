@@ -136,6 +136,10 @@ MIN_TRACKING_CONFIDENCE = 0.7
 # Rep validation
 MIN_REP_DURATION = 0.6    # seconds - prevents false counts and forces control
 
+# NEW: Rep validation tolerance and explicit hysteresis margin
+REP_VALIDATION_RELIEF = 5   # degrees: The +/- 2 degree error space allowed for reaching a calibrated peak
+REP_HYSTERESIS_MARGIN = 5   # degrees: Margin used for state transition stability (anti-flicker)
+
 # Default thresholds (overridden by calibration)
 DEFAULT_CONTRACTED_THRESHOLD = 50
 DEFAULT_EXTENDED_THRESHOLD = 160

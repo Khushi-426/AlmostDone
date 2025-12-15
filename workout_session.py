@@ -279,6 +279,7 @@ class WorkoutSession:
     def get_state_dict(self) -> dict:
         """Get current state as dictionary for API"""
         # <<< CRITICAL FIX: Include dynamic joint name and exercise name in state dict >>>
+        # This line ensures 'exercise_name' is passed to the frontend
         return {
             'exercise_name': self.exercise_config.name,
             'tracked_joint_name': self.exercise_config.joint_to_track.value.title(),

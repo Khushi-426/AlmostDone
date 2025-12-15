@@ -16,7 +16,7 @@ import {
   VolumeX,
   User,
   Loader,
-  RefreshCw // Added Refresh icon
+  RefreshCw, // Added Refresh icon
 } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import { useAuth } from "./context/AuthContext";
@@ -36,7 +36,7 @@ const speak = (text) => {
 
 // --- API CONFIGURATION ---
 // CHANGED: Switched to localhost to resolve connection refused errors on some systems
-const API_URL = "http://localhost:5001"; 
+const API_URL = "http://localhost:5001";
 
 const Tracker = () => {
   const navigate = useNavigate();
@@ -48,7 +48,7 @@ const Tracker = () => {
   const [selectedExercise, setSelectedExercise] = useState(null);
 
   const [active, setActive] = useState(false);
-  const [isLoading, setIsLoading] = useState(false); 
+  const [isLoading, setIsLoading] = useState(false);
   const [fetchError, setFetchError] = useState(false); // New State for API Errors
   const [data, setData] = useState(null);
   const [sessionTime, setSessionTime] = useState(0);
@@ -62,7 +62,7 @@ const Tracker = () => {
 
   const [socket, setSocket] = useState(null);
   const timerRef = useRef(null);
-  const stopTimeoutRef = useRef(null); 
+  const stopTimeoutRef = useRef(null);
 
   // Audio Ref to prevent repeats
   const lastSpokenRef = useRef("");
@@ -79,8 +79,8 @@ const Tracker = () => {
     });
 
     newSocket.on("connect_error", (err) => {
-        console.error("Socket Connection Error:", err);
-        setConnectionStatus("DISCONNECTED");
+      console.error("Socket Connection Error:", err);
+      setConnectionStatus("DISCONNECTED");
     });
 
     newSocket.on("disconnect", () => {
@@ -201,7 +201,7 @@ const Tracker = () => {
       return;
     }
 
-    setIsLoading(true); 
+    setIsLoading(true);
     setConnectionStatus("CONNECTING");
 
     try {
@@ -228,13 +228,15 @@ const Tracker = () => {
           1000
         );
       } else {
-         throw new Error("Failed to start session");
+        throw new Error("Failed to start session");
       }
     } catch (e) {
-      alert("Could not connect to AI Server. Please ensure 'app.py' is running.");
+      alert(
+        "Could not connect to AI Server. Please ensure 'app.py' is running."
+      );
       console.error(e);
       setConnectionStatus("DISCONNECTED");
-      setViewMode("DEMO"); 
+      setViewMode("DEMO");
     } finally {
       setIsLoading(false);
     }
@@ -242,7 +244,7 @@ const Tracker = () => {
 
   const stopSession = () => {
     setActive(false);
-    
+
     if (socket && socket.connected) {
       socket.emit("stop_session", {
         email: user?.email,
@@ -254,8 +256,8 @@ const Tracker = () => {
 
     // Fallback Safety Timer
     stopTimeoutRef.current = setTimeout(() => {
-        console.log("Forcing navigation (timeout)");
-        handleExitNavigation();
+      console.log("Forcing navigation (timeout)");
+      handleExitNavigation();
     }, 1000);
   };
 
@@ -329,28 +331,37 @@ const Tracker = () => {
         }}
       >
         {fetchError ? (
-             <div style={{ gridColumn: "1 / -1", textAlign: "center", padding: "40px", color: "#D32F2F" }}>
-                <AlertCircle size={48} style={{ margin: "0 auto 20px" }} />
-                <h3>Cannot connect to AI Server</h3>
-                <p>Please ensure the Python backend (app.py) is running on port 5001.</p>
-                <button 
-                    onClick={fetchExercises}
-                    style={{
-                        marginTop: "20px",
-                        padding: "10px 25px",
-                        background: "#D32F2F",
-                        color: "white",
-                        border: "none",
-                        borderRadius: "20px",
-                        cursor: "pointer",
-                        display: "inline-flex",
-                        alignItems: "center",
-                        gap: "8px"
-                    }}
-                >
-                    <RefreshCw size={16} /> Retry Connection
-                </button>
-             </div>
+          <div
+            style={{
+              gridColumn: "1 / -1",
+              textAlign: "center",
+              padding: "40px",
+              color: "#D32F2F",
+            }}
+          >
+            <AlertCircle size={48} style={{ margin: "0 auto 20px" }} />
+            <h3>Cannot connect to AI Server</h3>
+            <p>
+              Please ensure the Python backend (app.py) is running on port 5001.
+            </p>
+            <button
+              onClick={fetchExercises}
+              style={{
+                marginTop: "20px",
+                padding: "10px 25px",
+                background: "#D32F2F",
+                color: "white",
+                border: "none",
+                borderRadius: "20px",
+                cursor: "pointer",
+                display: "inline-flex",
+                alignItems: "center",
+                gap: "8px",
+              }}
+            >
+              <RefreshCw size={16} /> Retry Connection
+            </button>
+          </div>
         ) : exercises.length === 0 ? (
           <p
             style={{ gridColumn: "1 / -1", textAlign: "center", color: "#888" }}
@@ -614,7 +625,14 @@ const Tracker = () => {
               }
               onMouseUp={(e) => (e.currentTarget.style.transform = "scale(1)")}
             >
-              {isLoading ? "Connecting..." : <> <Play size={20} fill="currentColor" /> Start Session </>}
+              {isLoading ? (
+                "Connecting..."
+              ) : (
+                <>
+                  {" "}
+                  <Play size={20} fill="currentColor" /> Start Session{" "}
+                </>
+              )}
             </button>
           </div>
         </div>
@@ -890,12 +908,16 @@ const Tracker = () => {
                   flexDirection: "column",
                   alignItems: "center",
                   justifyContent: "center",
-                  gap: "20px"
+                  gap: "20px",
                 }}
               >
-                {isLoading ? <Loader className="spin-animation" size={48} /> : <AlertCircle size={48} />}
+                {isLoading ? (
+                  <Loader className="spin-animation" size={48} />
+                ) : (
+                  <AlertCircle size={48} />
+                )}
                 <div style={{ fontSize: "1.2rem", opacity: 0.8 }}>
-                   {isLoading ? "Starting Camera..." : "Initializing Camera..."}
+                  {isLoading ? "Starting Camera..." : "Initializing Camera..."}
                 </div>
               </div>
             )}
@@ -946,7 +968,7 @@ const Tracker = () => {
                   style={{
                     position: "absolute",
                     inset: 0,
-                    background: "rgba(0,0,0,0.1)", 
+                    background: "rgba(0,0,0,0.1)",
                     display: "flex",
                     flexDirection: "column",
                     alignItems: "center",

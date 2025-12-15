@@ -3,7 +3,8 @@ Rep counting logic with PERFECT accuracy guarantees
 ENHANCED: Proper state machine + hysteresis + velocity tracking
 """
 from collections import deque
-from constants import ArmStage
+# Update imports to include the new constants for validation
+from constants import ArmStage, REP_VALIDATION_RELIEF, REP_HYSTERESIS_MARGIN
 import time
 
 class RepCounter:
@@ -35,7 +36,11 @@ class RepCounter:
         }
         
         # Hysteresis margins (prevents flickering at thresholds)
-        self.hysteresis_margin = 5  # degrees
+        # self.hysteresis_margin = 5  # degrees <--- OLD
+        self.hysteresis_margin = REP_HYSTERESIS_MARGIN # Use imported constant
+
+        # NEW: Store the Rep Validation Relief (the +/- 2 degree error space)
+        self.rep_validation_relief = REP_VALIDATION_RELIEF
 
     def process_rep(self, arm, angle, metrics, current_time, history):
         """
@@ -107,46 +112,55 @@ class RepCounter:
     def _determine_target_state(self, angle, contracted, extended, current_stage):
         """
         Determine target state with hysteresis to prevent flickering
+        ENHANCED: Incorporates REP_VALIDATION_RELIEF (e.g., +/- 2 degrees) to relax 
+        the angle requirement for reaching a calibrated peak.
         """
         margin = self.hysteresis_margin
-        
+        relief = self.rep_validation_relief # +/- 2 degrees
+
+        # Apply the required +/- 2 degree error space to the calibrated thresholds
+        # Contracted is a low angle, so relief makes the threshold higher (easier to reach UP)
+        effective_contracted = contracted + relief
+        # Extended is a high angle, so relief makes the threshold lower (easier to reach DOWN)
+        effective_extended = extended - relief
+
         # Fully contracted zone (with hysteresis)
-        if angle <= contracted - margin:
+        if angle <= effective_contracted - margin:
             return ArmStage.UP.value
         
         # Fully extended zone (with hysteresis)
-        if angle >= extended + margin:
+        if angle >= effective_extended + margin:
             return ArmStage.DOWN.value
         
-        # In the middle - use hysteresis based on current state
+        # In the middle - use hysteresis based on current state (using effective thresholds)
         if current_stage == ArmStage.UP.value:
             # Stick to UP until we clearly move past contracted threshold
-            if angle < contracted + margin:
+            if angle < effective_contracted + margin:
                 return ArmStage.UP.value
             else:
                 return ArmStage.MOVING_DOWN.value
         
         elif current_stage == ArmStage.DOWN.value:
             # Stick to DOWN until we clearly move past extended threshold
-            if angle > extended - margin:
+            if angle > effective_extended - margin:
                 return ArmStage.DOWN.value
             else:
                 return ArmStage.MOVING_UP.value
         
         elif current_stage == ArmStage.MOVING_UP.value:
             # Continue moving up until we reach contracted zone
-            if angle <= contracted - margin:
+            if angle <= effective_contracted - margin:
                 return ArmStage.UP.value
-            elif angle >= extended + margin:
+            elif angle >= effective_extended + margin:
                 return ArmStage.DOWN.value  # Moved back down
             else:
                 return ArmStage.MOVING_UP.value
         
         elif current_stage == ArmStage.MOVING_DOWN.value:
             # Continue moving down until we reach extended zone
-            if angle >= extended + margin:
+            if angle >= effective_extended + margin:
                 return ArmStage.DOWN.value
-            elif angle <= contracted - margin:
+            elif angle <= effective_contracted - margin:
                 return ArmStage.UP.value  # Moved back up
             else:
                 return ArmStage.MOVING_DOWN.value
@@ -198,13 +212,20 @@ class RepCounter:
                                extended, arm, history):
         """
         Provide form feedback based on angle and stage
+        ENHANCED: Range of Motion guidance uses the relaxed thresholds 
+        (effective_contracted/extended) to match the rep counting logic.
         """
         safe_min = self.calibration.safe_angle_min
         safe_max = self.calibration.safe_angle_max
+
+        # Apply the same relief to feedback thresholds for consistency
+        relief = self.rep_validation_relief
+        effective_contracted = contracted + relief
+        effective_extended = extended - relief
         
         feedback_key = f"{arm.lower()}_feedback_count"
         
-        # Critical form errors
+        # Critical form errors (Safety margins should NOT be relaxed)
         if angle < safe_min:
             metrics.feedback = "Over Curling"
             setattr(history, feedback_key, getattr(history, feedback_key) + 1)
@@ -212,15 +233,17 @@ class RepCounter:
             metrics.feedback = "Over Extending"
             setattr(history, feedback_key, getattr(history, feedback_key) + 1)
         
-        # Range of motion guidance (only if not at extremes)
-        elif contracted < angle < extended:
+        # Range of motion guidance (using RELAXED thresholds)
+        elif effective_contracted < angle < effective_extended:
             if metrics.stage == ArmStage.UP.value or metrics.stage == ArmStage.MOVING_UP.value:
-                if angle > contracted + 10:  # Not quite at peak
+                # Use effective_contracted for comparison
+                if angle > effective_contracted + 10:  # Not quite at peak
                     metrics.feedback = "Curl Higher"
                     setattr(history, feedback_key, getattr(history, feedback_key) + 1)
             
             elif metrics.stage == ArmStage.DOWN.value or metrics.stage == ArmStage.MOVING_DOWN.value:
-                if angle < extended - 10:  # Not quite at bottom
+                # Use effective_extended for comparison
+                if angle < effective_extended - 10:  # Not quite at bottom
                     metrics.feedback = "Extend Fully"
                     setattr(history, feedback_key, getattr(history, feedback_key) + 1)
 
