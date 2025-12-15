@@ -1,8 +1,8 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { 
-  Timer, ArrowLeft, StopCircle, Info, CheckCircle, 
-  Activity, AlertCircle, Play, Dumbbell, Wifi, WifiOff, Volume2, VolumeX, User
+  Timer, ArrowLeft, StopCircle, CheckCircle, 
+  Activity, AlertCircle, Play, Dumbbell, Wifi, WifiOff, User, Mic 
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useAuth } from './context/AuthContext'; 
@@ -115,19 +115,35 @@ const Tracker = () => {
       // ACTIVE
       else if (json.status === 'ACTIVE') {
           setCountdownValue(null);
-          let msg = "MAINTAIN FORM";
-          let color = "#76B041"; 
           
-          if (json.RIGHT && json.RIGHT.feedback) { 
-              msg = `RIGHT: ${json.RIGHT.feedback}`; 
-              color = "#D32F2F"; 
+          const rightMsg = json.RIGHT?.feedback || "";
+          const leftMsg = json.LEFT?.feedback || "";
+          
+          // Helper to check if a message is an actual "Problem"
+          const isProblem = (msg) => {
+              if (!msg) return false;
+              const safeMessages = ["Maintain Form", "Initializing...", "Looking Strong!", "Great Control!", "Perfect Form!", "Keep Pushing!", "Solid Rep!", "Nice Pace!"];
+              return !safeMessages.includes(msg);
+          };
+
+          let displayMsg = "MAINTAIN FORM";
+          let color = "#76B041"; // Green
+
+          // PRIORITY LOGIC
+          if (isProblem(leftMsg)) {
+              displayMsg = `LEFT: ${leftMsg}`;
+              color = "#D32F2F"; // Red
+          } 
+          else if (isProblem(rightMsg)) {
+              displayMsg = `RIGHT: ${rightMsg}`;
+              color = "#D32F2F"; // Red
           }
-          else if (json.LEFT && json.LEFT.feedback) { 
-              msg = `LEFT: ${json.LEFT.feedback}`; 
-              color = "#D32F2F"; 
+          else {
+              if (rightMsg !== "Maintain Form" && rightMsg !== "") displayMsg = rightMsg;
+              else if (leftMsg !== "Maintain Form" && leftMsg !== "") displayMsg = leftMsg;
           }
           
-          setFeedback(msg);
+          setFeedback(displayMsg);
           
           const fbBox = document.getElementById('feedback-box');
           if(fbBox) {
@@ -142,11 +158,9 @@ const Tracker = () => {
     try {
         setConnectionStatus('CONNECTING');
         
-        // --- FORCE UI RESET IMMEDIATELY (Fixes Recalibration Lag) ---
         setFeedback("Aligning...");
         setCalibrationProgress(0);
         setCountdownValue(null);
-        // Temporarily force status to show overlay while fetching
         setData(prev => ({ ...prev, status: 'CALIBRATION' }));
 
         const res = await fetch('http://localhost:5000/start_tracking');
@@ -191,7 +205,6 @@ const Tracker = () => {
           stopSession();
       } 
       else if (action === 'RECALIBRATE') {
-          // Directly call startSession to reset the backend and UI
           startSession(); 
       }
   };
@@ -244,7 +257,32 @@ const Tracker = () => {
       <div style={{ flex: '0 0 450px', padding: '40px', display: 'flex', flexDirection: 'column', background: '#fff', borderRight: '1px solid rgba(0,0,0,0.05)', zIndex: 10 }}>
         <button onClick={() => setViewMode('LIBRARY')} style={{ background: 'transparent', border: 'none', color: '#666', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '30px', fontWeight: '600', alignSelf: 'flex-start' }}><ArrowLeft size={18} /> Back</button>
         <h1 style={{ fontSize: '2.5rem', color: '#1A3C34', fontWeight: '800', marginBottom: '10px' }}>{selectedExercise.title}</h1>
-        <div style={{ display: 'inline-block', padding: '5px 12px', background: '#f0f0f0', borderRadius: '8px', fontSize: '0.85rem', color: '#666', fontWeight: '600', width: 'fit-content', marginBottom: '30px' }}>{selectedExercise.category}</div>
+        <div style={{ display: 'inline-block', padding: '5px 12px', background: '#f0f0f0', borderRadius: '8px', fontSize: '0.85rem', color: '#666', fontWeight: '600', width: 'fit-content', marginBottom: '20px' }}>{selectedExercise.category}</div>
+        
+        {/* --- [UPDATED] VOICE BOT INSTRUCTIONS --- */}
+        <div style={{ background: '#f8f9fa', padding: '20px', borderRadius: '15px', margin: '10px 0', border: '1px solid #eee' }}>
+            <h3 style={{ fontSize: '1rem', color: '#1A3C34', marginBottom: '10px', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <Mic size={18} color="#2196F3" /> Voice Command Guide
+            </h3>
+            <p style={{ fontSize: '0.9rem', color: '#666', marginBottom: '12px', lineHeight: '1.4' }}>
+                Control your session hands-free. Show the V-Sign to activate listening.
+            </p>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', fontSize: '0.85rem', color: '#444', fontWeight: '500' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '10px', background: '#fff', padding: '8px', borderRadius: '8px', border: '1px solid #eee' }}>
+                    <span style={{ background: '#E3F2FD', color: '#2196F3', padding: '4px 8px', borderRadius: '6px', fontWeight: 'bold' }}>✌️ V-SIGN</span>
+                    <span>Hold "Peace" sign to wake up the bot</span>
+                </div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '10px', background: '#fff', padding: '8px', borderRadius: '8px', border: '1px solid #eee' }}>
+                    <span style={{ background: '#E8F5E9', color: '#2C5D31', padding: '4px 8px', borderRadius: '6px', fontWeight: 'bold' }}>🗣 COMMANDS</span>
+                    <span>"Recalibrate", "Stop", "Align Me"</span>
+                </div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '10px', background: '#fff', padding: '8px', borderRadius: '8px', border: '1px solid #eee' }}>
+                    <span style={{ background: '#FFF3E0', color: '#EF6C00', padding: '4px 8px', borderRadius: '6px', fontWeight: 'bold' }}>💬 CHAT</span>
+                    <span>"What's my best rep?", "History?"</span>
+                </div>
+            </div>
+        </div>
+
         <div style={{ marginTop: 'auto' }}>
             <button 
                 onClick={() => { 
@@ -319,6 +357,7 @@ const Tracker = () => {
                 gesture={data?.gesture}
                 onCommand={handleBotCommand} 
                 onListeningChange={handleListeningChange}
+                userEmail={user?.email} 
             />
         </div>
       </div>
@@ -332,7 +371,6 @@ const Tracker = () => {
                 <div style={{ color: 'white', position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>Initializing Camera...</div>
             )}
 
-            {/* --- RESTORED FEATURE 1: BODY FRAME OVERLAY --- */}
             {data?.status === 'CALIBRATION' && (
                 <div style={{
                     position: 'absolute', top: '50%', left: '50%', transform: 'translate(-50%, -50%)',
@@ -348,7 +386,6 @@ const Tracker = () => {
             )}
             
             <AnimatePresence>
-                {/* --- RESTORED FEATURE 2: GREEN LOADING BAR --- */}
                 {data?.status === 'CALIBRATION' && (
                     <motion.div 
                         initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
@@ -370,7 +407,6 @@ const Tracker = () => {
                     </motion.div>
                 )}
 
-                {/* COUNTDOWN OVERLAY */}
                 {data?.status === 'COUNTDOWN' && (
                     <motion.div
                         initial={{ scale: 0.5, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} exit={{ scale: 1.5, opacity: 0 }}
@@ -381,10 +417,9 @@ const Tracker = () => {
                     </motion.div>
                 )}
 
-                {/* ACTIVE FEEDBACK BOX */}
                 {data?.status === 'ACTIVE' && (
                     <motion.div initial={{ y: 50, opacity: 0 }} animate={{ y: 0, opacity: 1 }} id="feedback-box" style={{ position: 'absolute', bottom: '50px', left: '50%', transform: 'translateX(-50%)', background: 'rgba(255,255,255,0.95)', padding: '15px 40px', borderRadius: '50px', fontSize: '1.5rem', fontWeight: '800', color: '#222', whiteSpace: 'nowrap', boxShadow: '0 20px 40px rgba(0,0,0,0.3)', backdropFilter: 'blur(10px)', display: 'flex', alignItems: 'center', gap: '15px', border: '3px solid transparent', transition: 'all 0.3s ease' }}>
-                       {feedback.includes('MAINTAIN') ? <CheckCircle size={28}/> : <AlertCircle size={28}/>} 
+                       {feedback.includes('MAINTAIN') || feedback.includes('Looking') || feedback.includes('Great') ? <CheckCircle size={28}/> : <AlertCircle size={28}/>} 
                        {feedback}
                     </motion.div>
                 )}

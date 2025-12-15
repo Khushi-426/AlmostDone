@@ -57,8 +57,6 @@ class WorkoutSession:
         self.last_feedback_text = {'RIGHT': "", 'LEFT': ""}
         
         self.gesture_detected = False
-        
-        # [NEW] Listening Mode State
         self.listening_mode = False
     
     def start(self):
@@ -89,7 +87,6 @@ class WorkoutSession:
     def stop(self):
         from constants import WorkoutPhase
         
-        # FIX: Explicit None checks to avoid ambiguity
         if self.cap is not None: 
             self.cap.release()
             
@@ -99,44 +96,35 @@ class WorkoutSession:
             
         self.phase = WorkoutPhase.INACTIVE
 
-    # [NEW] Toggle Listening Mode
     def set_listening(self, active: bool):
         self.listening_mode = active
 
     def process_frame(self) -> Tuple[Optional[np.ndarray], bool]:
         from constants import WorkoutPhase
         
-        # FIX: Explicit None check for self.cap
         if self.cap is None or not self.cap.isOpened(): 
             return None, False
             
         success, image = self.cap.read()
         if not success: return None, False
         
-        # 1. Prepare Image
         image.flags.writeable = False
         image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
         
-        # 2. Run Inference
         results = self.holistic_model.process(image)
         
         image.flags.writeable = True
         image = cv2.cvtColor(image, cv2.COLOR_RGB2BGR)
         
-        # [CRITICAL LOGIC]
-        # If Listening Mode is ON: We skip workout logic and drawing landmarks.
         if self.listening_mode:
             image = cv2.flip(image, 1)
-            # Optional visual indicator
             cv2.putText(image, "LISTENING...", (50, 50), cv2.FONT_HERSHEY_SIMPLEX, 1, (255, 255, 255), 2)
             return image, True
 
         current_time = time.time()
         
-        # 3. Detect Gesture (Only if not already listening)
         self.gesture_detected = self.pose_processor.detect_v_sign(results)
 
-        # 4. Phase Processing
         if self.phase == WorkoutPhase.CALIBRATION:
             self._process_calibration(results, current_time)
         elif self.phase == WorkoutPhase.COUNTDOWN:
@@ -144,7 +132,6 @@ class WorkoutSession:
         elif self.phase == WorkoutPhase.ACTIVE:
             self._process_workout(results, current_time)
         
-        # 5. Draw Landmarks
         if results.pose_landmarks:
             mp.solutions.drawing_utils.draw_landmarks(
                 image, results.pose_landmarks, mp.solutions.pose.POSE_CONNECTIONS)
@@ -188,7 +175,10 @@ class WorkoutSession:
                     current_time, self.history
                 )
                 
-                if not self.arm_metrics[arm].feedback and self.ai_latched_state[arm]:
+                # [FIX] AI Feedback Override
+                # If rep_counter says "Maintain Form" (default) OR empty, but AI sees bad form -> Override
+                current_fb = self.arm_metrics[arm].feedback
+                if (not current_fb or current_fb == "Maintain Form") and self.ai_latched_state[arm]:
                     if self.arm_metrics[arm].stage == ArmStage.UP.value:
                         self.arm_metrics[arm].feedback = "AI: Bad Form"
                 

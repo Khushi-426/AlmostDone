@@ -1,58 +1,84 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { fetchAICommentary } from '../services/aiService';
-import { Mic, Radio, AlertTriangle } from 'lucide-react';
+import { Mic } from 'lucide-react';
 
-const RobotAvatar = ({ state }) => {
-    // States: 'IDLE', 'LISTENING', 'SPEAKING', 'THINKING', 'ERROR'
-    const glowVariants = {
-        IDLE: { scale: [1, 1.05, 1], opacity: 0.1, transition: { duration: 2, repeat: Infinity } },
-        LISTENING: { scale: [1, 1.2, 1], opacity: 0.6, fill: "#2196F3", transition: { duration: 1, repeat: Infinity } },
-        SPEAKING: { scale: [1, 1.1, 1], opacity: 0.4, fill: "#69B341", transition: { duration: 0.5, repeat: Infinity } },
-        THINKING: { scale: [1, 0.9, 1], opacity: 0.5, fill: "#FF9800", transition: { duration: 0.8, repeat: Infinity } },
-        ERROR: { scale: [1, 1.1, 1], opacity: 0.5, fill: "#D32F2F", transition: { duration: 0.5, repeat: Infinity } }
+// --- 3D IMPORTS ---
+import { Canvas, useFrame } from '@react-three/fiber';
+import { 
+    Environment, 
+    Float, 
+    ContactShadows, 
+    Sphere, 
+    MeshDistortMaterial 
+} from '@react-three/drei';
+import * as THREE from 'three';
+
+const Avatar3D = ({ state }) => {
+    const mesh = useRef();
+    const light = useRef();
+    
+    useFrame((state, delta) => {
+        if (!mesh.current) return;
+        
+        if (state === 'THINKING') {
+            mesh.current.distort = THREE.MathUtils.lerp(mesh.current.distort, 0.85, 0.1);
+            mesh.current.speed = THREE.MathUtils.lerp(mesh.current.speed, 5, 0.1);
+        } else {
+            mesh.current.distort = THREE.MathUtils.lerp(mesh.current.distort, 0.5, 0.1);
+            mesh.current.speed = THREE.MathUtils.lerp(mesh.current.speed, 3, 0.1);
+        }
+    });
+
+    const colors = {
+        IDLE: "#69B341",       
+        LISTENING: "#2196F3", 
+        SPEAKING: "#00E676",   
+        THINKING: "#FF9800",  
+        ERROR: "#D32F2F"       
     };
 
+    const activeColor = new THREE.Color(colors[state] || colors.IDLE);
+
     return (
-        <svg width="150" height="150" viewBox="0 0 200 200" fill="none" xmlns="http://www.w3.org/2000/svg">
-            <motion.circle cx="100" cy="100" r="90" fill="#69B341" variants={glowVariants} animate={state} />
-            <circle cx="100" cy="110" r="50" fill="#fff" stroke="#1A3C34" strokeWidth="4"/>
-            <path d="M50 110 Q30 110 30 140" stroke="#1A3C34" strokeWidth="4" strokeLinecap="round"/>
-            <path d="M150 110 Q170 110 170 140" stroke="#1A3C34" strokeWidth="4" strokeLinecap="round"/>
-            <motion.g animate={{ y: state === 'SPEAKING' ? [0, -2, 0] : 0 }}>
-                <rect x="60" y="40" width="80" height="70" rx="20" fill="#1A3C34"/>
-                <rect x="65" y="45" width="70" height="60" rx="15" fill="#222"/>
-                <motion.circle cx="85" cy="70" r="8" fill={state === 'LISTENING' ? '#2196F3' : (state === 'ERROR' ? '#D32F2F' : '#00E676')} animate={{ scaleY: state === 'SPEAKING' ? [1, 0.1, 1] : 1 }} />
-                <motion.circle cx="115" cy="70" r="8" fill={state === 'LISTENING' ? '#2196F3' : (state === 'ERROR' ? '#D32F2F' : '#00E676')} animate={{ scaleY: state === 'SPEAKING' ? [1, 0.1, 1] : 1 }} />
-                <motion.rect x="90" y="90" width="20" height="4" rx="2" fill={state === 'ERROR' ? '#D32F2F' : '#00E676'} animate={{ height: state === 'SPEAKING' ? [4, 12, 4] : 4, width: state === 'SPEAKING' ? [20, 24, 20] : 20, x: state === 'SPEAKING' ? [90, 88, 90] : 90 }} />
-            </motion.g>
-            <line x1="100" y1="40" x2="100" y2="20" stroke="#1A3C34" strokeWidth="4"/>
-            <motion.circle cx="100" cy="15" r="6" fill="#D32F2F" animate={{ opacity: [1, 0.4, 1] }} transition={{ repeat: Infinity, duration: 1 }} />
-        </svg>
+        <group>
+            <Float speed={2.5} rotationIntensity={1.5} floatIntensity={1.5}>
+                <Sphere args={[1.2, 64, 64]} ref={mesh}>
+                    <MeshDistortMaterial 
+                        color={activeColor} 
+                        envMapIntensity={1.0} 
+                        clearcoat={1} 
+                        clearcoatRoughness={0.2} 
+                        metalness={0.2} 
+                        roughness={0.3} 
+                        distort={0.5}   
+                        speed={3}       
+                    />
+                </Sphere>
+                <pointLight ref={light} position={[0, 0, 0]} intensity={2.5} distance={6} color={activeColor} />
+            </Float>
+            <ContactShadows opacity={0.4} scale={12} blur={3.5} far={10} resolution={256} color="#1A3C34" />
+        </group>
     );
 };
 
-const AICoach = ({ data, feedback, exerciseName, active, gesture, onCommand, onListeningChange }) => {
+const AICoach = ({ data, feedback, exerciseName, active, gesture, onCommand, onListeningChange, userEmail }) => {
     const [message, setMessage] = useState("Standing by...");
     const [botState, setBotState] = useState('IDLE'); 
     const [micError, setMicError] = useState(false);
     
     const recognitionRef = useRef(null);
     const isListeningForWakeWord = useRef(true);
-    const isBotSpeaking = useRef(false); // [FIX] New Flag to ignore self-voice
+    const isBotSpeaking = useRef(false);
     const lastGestureRef = useRef(null);
     const listenTimeoutRef = useRef(null);
     const lastFeedbackRef = useRef("");
-    const lastRepTotalRef = useRef(0);
 
-    // --- 1. SEAMLESS TTS LOGIC (FIXED) ---
+    // --- 1. SEAMLESS TTS LOGIC ---
     const speak = (text, onEndCallback = null) => {
         if (!window.speechSynthesis) return;
         
-        // [FIX] DO NOT STOP RECOGNITION HERE
-        // Instead, mark that bot is speaking so we can ignore its voice in onResult
         isBotSpeaking.current = true;
-
         window.speechSynthesis.cancel();
         setBotState('SPEAKING');
         
@@ -60,22 +86,13 @@ const AICoach = ({ data, feedback, exerciseName, active, gesture, onCommand, onL
         utterance.rate = 1.1; 
         
         utterance.onend = () => {
-            isBotSpeaking.current = false; // [FIX] Bot finished speaking
-
-            // Only reset state if we are technically still "speaking" visually
+            isBotSpeaking.current = false;
             setBotState(prevState => {
                 if (prevState === 'SPEAKING') return 'IDLE';
                 return prevState;
             });
-
-            if (onEndCallback) {
-                onEndCallback();
-            } else {
-                // If not waiting for a specific answer, return to Wake Word mode
-                if (!listenTimeoutRef.current) {
-                    isListeningForWakeWord.current = true;
-                }
-            }
+            if (onEndCallback) onEndCallback();
+            else if (!listenTimeoutRef.current) isListeningForWakeWord.current = true;
         };
         
         utterance.onerror = () => {
@@ -88,8 +105,12 @@ const AICoach = ({ data, feedback, exerciseName, active, gesture, onCommand, onL
 
     // --- 2. ACTIVATION MODES ---
     const activateListeningMode = () => {
-        // [FIX] Allow re-triggering even if already false, to reset timer
         console.log("🎤 Listening Mode ACTIVATED");
+        if (isBotSpeaking.current) {
+            window.speechSynthesis.cancel();
+            isBotSpeaking.current = false;
+        }
+
         isListeningForWakeWord.current = false;
         if (onListeningChange) onListeningChange(true); 
         
@@ -97,7 +118,6 @@ const AICoach = ({ data, feedback, exerciseName, active, gesture, onCommand, onL
         setMessage("Listening...");
         
         speak("Yes?", () => {
-             // Force visual state back to listening after saying "Yes?"
              setBotState('LISTENING');
              startSilenceTimer(); 
         });
@@ -115,14 +135,12 @@ const AICoach = ({ data, feedback, exerciseName, active, gesture, onCommand, onL
 
     const startSilenceTimer = () => {
         if (listenTimeoutRef.current) clearTimeout(listenTimeoutRef.current);
-        
         listenTimeoutRef.current = setTimeout(() => {
-            console.log("⏰ Silence Timeout (7s)");
             speak("Resuming exercise.", () => deactivateListeningMode());
         }, 7000); 
     };
 
-    // --- 3. ROBUST SPEECH RECOGNITION ---
+    // --- 3. SPEECH RECOGNITION ---
     useEffect(() => {
         const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
         if (!SpeechRecognition) {
@@ -136,63 +154,52 @@ const AICoach = ({ data, feedback, exerciseName, active, gesture, onCommand, onL
         recognition.interimResults = false;
         recognition.lang = 'en-US';
 
-        recognition.onstart = () => {
-            console.log("Status: Mic Started");
-            setMicError(false);
-        };
-
+        recognition.onstart = () => setMicError(false);
         recognition.onerror = (e) => {
             if (e.error === 'not-allowed') {
                 setMicError(true);
                 setBotState('ERROR');
                 setMessage("Mic Access Denied");
-            } else {
-                console.log("Mic Error:", e.error);
             }
         };
 
         recognition.onresult = async (event) => {
-            // [FIX] If the bot is currently talking, ignore any input (Echo Cancellation)
-            if (isBotSpeaking.current) {
-                console.log("Ignored input while speaking.");
-                return;
-            }
-
             const transcript = event.results[event.results.length - 1][0].transcript.trim().toLowerCase();
             console.log("Heard:", transcript);
 
-            // User spoke -> Reset 7s timer
+            const isPriority = isStopCommand(transcript);
+
+            if (isPriority) {
+                if (isBotSpeaking.current) {
+                    window.speechSynthesis.cancel();
+                    isBotSpeaking.current = false;
+                }
+            } else {
+                if (isBotSpeaking.current) return;
+            }
+
             if (!isListeningForWakeWord.current) {
                 if (listenTimeoutRef.current) clearTimeout(listenTimeoutRef.current);
             }
 
-            // A. FAST LOCAL CHECK
             if (isStopCommand(transcript)) { 
                 await executeCommand("stop", "Stopping session."); 
                 return; 
             }
-            if (isRecalibrateCommand(transcript)) { 
-                await executeCommand("recalibrate", "Recalibrating now."); 
-                return; 
-            }
-
-            // B. WAKE WORD CHECK
+            
             if (isListeningForWakeWord.current) {
                 if (transcript.includes("madona") || transcript.includes("madonna") || transcript.includes("hey bot")) {
                     activateListeningMode();
                 }
             } 
-            // C. ACTIVE LISTENING (Gemini)
             else {
                 await processSmartQuery(transcript);
             }
         };
 
-        // [FIX] Aggressive Keep-Alive
         recognition.onend = () => {
-            console.log("Mic stopped. Restarting...");
             if(active && !micError) {
-                try { recognition.start(); } catch(e){ console.log("Restart failed", e); }
+                try { recognition.start(); } catch(e){}
             }
         };
 
@@ -207,19 +214,16 @@ const AICoach = ({ data, feedback, exerciseName, active, gesture, onCommand, onL
         };
     }, [active]);
 
-    // --- 4. GESTURE TRIGGER ---
+    // --- 4. GESTURE TRIGGER (FIXED) ---
     useEffect(() => {
+        // [FIX] Removed "botState === IDLE" check. Now FORCE triggers if V_SIGN is seen.
         if (gesture === 'V_SIGN' && lastGestureRef.current !== 'V_SIGN') {
-            console.log("✌️ V-Sign Detected!");
+            console.log("✌️ V-Sign Triggered (FORCE)");
             activateListeningMode();
         }
         lastGestureRef.current = gesture;
     }, [gesture]);
 
-    const isRecalibrateCommand = (text) => 
-        text.includes("calibrate") || text.includes("reset") || text.includes("restart") || 
-        text.includes("setup") || text.includes("start over") || text.includes("fix");
-        
     const isStopCommand = (text) => 
         text.includes("stop") || text.includes("quit") || text.includes("end session") || text.includes("finish");
 
@@ -228,27 +232,19 @@ const AICoach = ({ data, feedback, exerciseName, active, gesture, onCommand, onL
         speak(reply, () => deactivateListeningMode());
     };
 
-    // --- SMART QUERY ---
     const processSmartQuery = async (text) => {
-        console.log("🧠 Processing Smart Query:", text);
         setBotState('THINKING');
         
-        // Local Shortcuts
-        if (text.includes("stats") || text.includes("count") || text.includes("reps")) {
-            const r = data?.RIGHT?.rep_count || 0;
-            const l = data?.LEFT?.rep_count || 0;
-            speak(`You have done ${r+l} reps total.`, () => deactivateListeningMode());
-            return;
-        }
-
         try {
-            const context = { exercise: exerciseName, reps: (data?.LEFT?.rep_count || 0) + (data?.RIGHT?.rep_count || 0) };
+            const context = { 
+                email: userEmail, 
+                exercise: exerciseName, 
+                reps: (data?.LEFT?.rep_count || 0) + (data?.RIGHT?.rep_count || 0) 
+            };
             
-            // Call Backend
             const aiResponse = await fetchAICommentary(context, text);
-            console.log("🤖 Received Response:", aiResponse);
+            console.log("🤖 GEMINI REPLIED:", aiResponse);
             
-            // Parse Action Codes
             if (aiResponse.includes("ACTION: RECALIBRATE")) {
                 executeCommand("recalibrate", "On it. Recalibrating.");
             } else if (aiResponse.includes("ACTION: STOP")) {
@@ -256,29 +252,19 @@ const AICoach = ({ data, feedback, exerciseName, active, gesture, onCommand, onL
             } else if (aiResponse.includes("ACTION: STATS")) {
                 const r = data?.RIGHT?.rep_count || 0;
                 const l = data?.LEFT?.rep_count || 0;
-                speak(`Total reps: ${r+l}.`, () => deactivateListeningMode());
+                speak(`You have done ${r+l} reps total.`, () => deactivateListeningMode());
             } else {
                 speak(aiResponse, () => deactivateListeningMode());
             }
         } catch (error) {
-            console.error("AI Error:", error);
-            speak("I'm having trouble connecting.", () => deactivateListeningMode());
+            console.error("AI Connection Error:", error);
+            speak("I'm having trouble connecting to my brain.", () => deactivateListeningMode());
         }
     };
 
-    // --- 5. IDLE FEEDBACK ---
     useEffect(() => {
         if (!active || botState !== 'IDLE' || !isListeningForWakeWord.current || isBotSpeaking.current) return;
-
-        const currentReps = (data?.LEFT?.rep_count || 0) + (data?.RIGHT?.rep_count || 0);
         const currentFeedback = feedback;
-        
-        if (currentReps > lastRepTotalRef.current) {
-            lastRepTotalRef.current = currentReps;
-            speak(["Nice work!", "Solid rep!", "Keep it up!"][Math.floor(Math.random()*3)]);
-            return;
-        }
-
         if (currentFeedback && currentFeedback !== lastFeedbackRef.current) {
              lastFeedbackRef.current = currentFeedback;
              if (!currentFeedback.includes("MAINTAIN") && !currentFeedback.includes("Initializing")) {
@@ -289,15 +275,23 @@ const AICoach = ({ data, feedback, exerciseName, active, gesture, onCommand, onL
     }, [data, feedback, active]);
 
     return (
-        <div style={{ height: '100%', width: '100%', background: 'linear-gradient(180deg, #F0F8FF 0%, #E6F4EA 100%)', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: '10px', textAlign: 'center', position: 'relative', borderTop: '2px solid #eee' }}>
-            <motion.div initial={{ scale: 0 }} animate={{ scale: 1 }}>
-                <RobotAvatar state={micError ? 'ERROR' : botState} />
-            </motion.div>
+        <div style={{ height: '100%', width: '100%', background: 'linear-gradient(180deg, #F0F8FF 0%, #E6F4EA 100%)', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', position: 'relative', borderTop: '2px solid #eee' }}>
+            
+            <div style={{ width: '250px', height: '250px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                <Canvas shadows dpr={[1, 2]} camera={{ position: [0, 0, 4.5], fov: 50 }}>
+                    <ambientLight intensity={0.7} />
+                    <spotLight position={[10, 10, 10]} angle={0.15} penumbra={1} intensity={1.5} castShadow />
+                    <Environment preset="city" />
+                    <Avatar3D state={micError ? 'ERROR' : botState} />
+                </Canvas>
+            </div>
+
             <AnimatePresence mode='wait'>
-                <motion.div key={message} initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -10 }} style={{ background: '#fff', padding: '12px 18px', borderRadius: '20px', boxShadow: '0 4px 15px rgba(0,0,0,0.05)', marginTop: '15px', maxWidth: '90%', border: '1px solid #e1e1e1' }}>
+                <motion.div key={message} initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -10 }} style={{ background: '#fff', padding: '12px 18px', borderRadius: '20px', boxShadow: '0 4px 15px rgba(0,0,0,0.05)', marginTop: '0px', maxWidth: '90%', border: '1px solid #e1e1e1', zIndex: 10 }}>
                     <p style={{ margin: 0, color: '#1A3C34', fontWeight: '600', fontSize: '0.9rem' }}>"{message}"</p>
                 </motion.div>
             </AnimatePresence>
+
             <div style={{ position: 'absolute', bottom: '10px', right: '10px', fontSize: '0.65rem', color: micError ? '#D32F2F' : '#aaa', display: 'flex', alignItems: 'center', gap: '4px' }}>
                 <Mic size={10} color={botState === 'LISTENING' ? '#2196F3' : '#aaa'} /> 
                 {micError ? "MIC ACCESS DENIED" : (botState === 'LISTENING' ? 'LISTENING (7s)' : 'AI ACTIVE')}

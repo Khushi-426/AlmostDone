@@ -1,5 +1,5 @@
 """
-Flask application with API routes - LISTENING MODE & GEMINI 2.0 INTEGRATED
+Flask application with API routes - HIGH SPEED CONFIGURATION (Lite Model First)
 """
 from flask import Flask, Response, jsonify, request
 import cv2
@@ -133,7 +133,6 @@ def handle_stop_session(data):
         workout_session.stop()
         
         # [CRITICAL FIX] Check if collection exists securely for PyMongo 4+
-        # This prevents the crash that was hiding your report!
         if user_email and sessions_collection is not None:
             right_summary = report['summary']['RIGHT']
             left_summary = report['summary']['LEFT']
@@ -235,10 +234,10 @@ def get_ai_prediction():
     sessions = list(sessions_collection.find({'email': request.json.get('email')}).sort('timestamp', 1))
     return jsonify(AIEngine.get_recovery_prediction(sessions) if sessions else {'error': 'No data'})
 
-# --- AI COACH ROUTE (GEMINI 2.0 - MATCHING YOUR DIAGNOSTIC) ---
+# --- AI COACH ROUTE (LOW LATENCY CONFIG) ---
 @app.route('/api/ai_coach', methods=['POST'])
 def ai_coach_chat():
-    """Handles chatbot logic using Gemini 2.0 models found in diagnostic"""
+    """Handles chatbot logic with DB access"""
     data = request.json
     user_query = data.get('query', '')
     context = data.get('context', {})
@@ -249,30 +248,65 @@ def ai_coach_chat():
         return jsonify({'response': 'System Error: Server API Key is missing.'}), 500
     
     api_key = raw_key.strip()
+
+    # 2. FETCH HISTORY FROM DB
+    email = context.get('email')
+    history_prompt = ""
     
-    system_prompt = """
+    if email and sessions_collection is not None:
+        try:
+            # Stats: Total Reps, Total Sessions
+            pipeline = [
+                {'$match': {'email': email}},
+                {'$group': {'_id': None, 'total_reps': {'$sum': '$total_reps'}, 'count': {'$sum': 1}}}
+            ]
+            stats = list(sessions_collection.aggregate(pipeline))
+            
+            # Personal Best
+            best_session = sessions_collection.find_one({'email': email}, sort=[('total_reps', -1)])
+            best_reps = best_session.get('total_reps', 0) if best_session else 0
+
+            # Recent Sessions
+            recent = list(sessions_collection.find({'email': email}).sort('timestamp', -1).limit(3))
+            
+            if stats:
+                total_reps = stats[0]['total_reps']
+                total_sessions = stats[0]['count']
+                history_prompt = f"\nUSER DATABASE HISTORY:\n- Total Workouts: {total_sessions}\n- Total Reps: {total_reps}\n- Personal Best Reps in a Session: {best_reps}\n- Recent Activity:"
+                for s in recent:
+                    history_prompt += f"\n  * {s.get('date', 'N/A')}: {s.get('exercise', 'Unknown')} ({s.get('total_reps', 0)} reps)"
+            else:
+                history_prompt = "\nUSER DATABASE HISTORY: New user (no past sessions found)."
+        except Exception as e:
+            print(f"DB Fetch Error: {e}")
+            history_prompt = "\nUSER DATABASE HISTORY: Error accessing records."
+    
+    system_prompt = f"""
     You are PhysioBot, an intelligent physiotherapy coach.
+    You have access to the user's database history below.
+    
     Rules:
     - If recalibration intent → return: ACTION: RECALIBRATE
     - If stop intent → return: ACTION: STOP
-    - If stats intent → return: ACTION: STATS
+    - If asked about history/bests, USE THE DATABASE HISTORY provided below.
     - Otherwise respond naturally, max 20 words, motivational and exercise-aware.
     """
 
     full_prompt = f"""
     {system_prompt}
-    CONTEXT: {json.dumps(context)}
+    {history_prompt}
+    CURRENT SESSION CONTEXT: {json.dumps(context)}
     USER QUERY: {user_query}
     """
     
     payload = {"contents": [{"parts": [{"text": full_prompt}]}]}
     headers = {'Content-Type': 'application/json'}
 
-    # Use models confirmed by your diagnostic
+    # [OPTIMIZATION] PRIORITIZE LITE MODEL FOR SPEED
     models_to_try = [
-        "gemini-2.0-flash",       # Standard Fast
-        "gemini-2.5-flash",       # Newest
-        "gemini-2.0-flash-lite",  # Backup
+        "gemini-2.0-flash-lite-preview-02-05", # FASTEST (New Lite Model)
+        "gemini-flash-lite-latest",             # FAST BACKUP
+        "gemini-2.5-flash",                     # SMART BACKUP
     ]
 
     for model_name in models_to_try:
@@ -288,7 +322,7 @@ def ai_coach_chat():
                 return jsonify({'response': ai_text})
             
             elif response.status_code == 404:
-                print(f"⚠️ {model_name} failed: 404 (Not Found)")
+                # Silently skip if model not found
                 continue
             else:
                 print(f"❌ {model_name} Error {response.status_code}: {response.text}")
@@ -330,7 +364,6 @@ def stop_tracking_http():
 def video_feed():
     return Response(generate_video_frames(), mimetype='multipart/x-mixed-replace; boundary=frame')
 
-# [CRITICAL MISSING ROUTE RESTORED]
 @app.route('/report_data')
 def report_data():
     if workout_session: return jsonify(workout_session.get_final_report())
