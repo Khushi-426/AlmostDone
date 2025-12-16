@@ -41,6 +41,12 @@ class RepCounter:
 
         # NEW: Store the Rep Validation Relief (the +/- 2 degree error space)
         self.rep_validation_relief = REP_VALIDATION_RELIEF
+        
+        # FIX: Add missing initializations for compliment logic
+        self.last_rep_time = {'RIGHT': 0, 'LEFT': 0}
+        self.current_compliment = {'RIGHT': "Maintain Form", 'LEFT': "Maintain Form"}
+        self.compliments = ["Great Rep!", "Excellent Form!", "Keep Going!", "Perfect!"]
+
 
     def process_rep(self, arm, angle, metrics, current_time, history):
         metrics.angle = angle
@@ -68,9 +74,19 @@ class RepCounter:
         if target_state != prev_stage:
             if self.pending_state[arm] == target_state:
                 hold_duration = current_time - self.pending_state_start[arm]
-                velocity_settled = velocity < 15
+
+                # FIX FOR STICKING ISSUE: 
+                # Only require low velocity to confirm a peak (UP or DOWN).
+                # When transitioning *out* of a peak (to MOVING_...), we rely only on hold_duration.
+                is_peak_transition = target_state in [ArmStage.UP.value, ArmStage.DOWN.value]
+                velocity_settled = velocity < 15 
                 
-                if hold_duration >= self.state_hold_time and velocity_settled:
+                is_confirmed = hold_duration >= self.state_hold_time and (
+                    (is_peak_transition and velocity_settled) or # Must be stable at peak
+                    (not is_peak_transition)                     # Movement transition relies only on hold time
+                )
+
+                if is_confirmed:
                     self._handle_state_transition(
                         arm, prev_stage, target_state, 
                         metrics, current_time, history
@@ -155,7 +171,9 @@ class RepCounter:
         # Count rep (End of Cycle)
         if prev_stage == ArmStage.UP.value:
             if new_stage in [ArmStage.MOVING_DOWN.value, ArmStage.DOWN.value]:
-                rep_time = current_time - metrics.last_down_time
+                # Calculate rep time using the stored rep_start_time
+                rep_time = current_time - self.rep_start_time[arm]
+                
                 if rep_time >= self.min_rep_duration:
                     metrics.rep_count += 1
                     metrics.rep_time = rep_time
@@ -163,14 +181,17 @@ class RepCounter:
                         metrics.min_rep_time = rep_time
                     else:
                         metrics.min_rep_time = min(rep_time, metrics.min_rep_time)
-                    metrics.last_down_time = current_time
                     metrics.curr_rep_time = 0
+                    
+                    # Reset rep_start_time for the next rep cycle
+                    self.rep_start_time[arm] = 0
                     
                     # TRIGGER COMPLIMENT ON REP COMPLETE
                     self.last_rep_time[arm] = current_time
                     self.current_compliment[arm] = random.choice(self.compliments)
         
         elif new_stage == ArmStage.DOWN.value:
+            # Set the start time of the rep cycle when the arm reaches the fully extended (DOWN) position
             self.rep_start_time[arm] = current_time
         
         elif new_stage == ArmStage.UP.value:
