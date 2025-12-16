@@ -156,7 +156,7 @@ const Tracker = () => {
     navigate("/report");
   };
 
-  // --- 2. LOGIC HANDLER (TTS & Phases) ---
+  // --- 2. LOGIC HANDLER ---
   const handleWorkoutUpdate = (json) => {
     // CALIBRATION
     if (json.status === "CALIBRATION") {
@@ -284,6 +284,23 @@ const Tracker = () => {
       console.log("Forcing navigation (timeout)");
       handleExitNavigation();
     }, 1000);
+  };
+
+  // --- 4. BOT INTERACTION HANDLERS ---
+  const handleListeningChange = (isListening) => {
+      if(socket) {
+          socket.emit('toggle_listening', { active: isListening });
+      }
+  };
+
+  const handleBotCommand = (action) => {
+      console.log("Tracker Received Command:", action);
+      if (action === 'STOP') {
+          stopSession();
+      } 
+      else if (action === 'RECALIBRATE') {
+          startSession(); 
+      }
   };
 
   const formatTime = (s) => {
@@ -1021,8 +1038,7 @@ const Tracker = () => {
                 </div>
               </div>
             )}
-
-            {/* OVERLAYS */}
+            
             <AnimatePresence>
               {/* 1. CALIBRATION OVERLAY (unchanged) */}
               {data?.status === "CALIBRATION" && (

@@ -1,25 +1,25 @@
 """
-Rep counting logic with PERFECT accuracy guarantees
-ENHANCED: Proper state machine + hysteresis + velocity tracking
+Rep counting logic - MINUTE PRECISION, ZERO FALSE ALARMS
 """
 from collections import deque
 # Update imports to include the new constants for validation
 from constants import ArmStage, REP_VALIDATION_RELIEF, REP_HYSTERESIS_MARGIN
 import time
+import random
 
 class RepCounter:
     def __init__(self, calibration_data, min_rep_duration=0.6):
         self.calibration = calibration_data
         self.min_rep_duration = min_rep_duration
 
-        # Stability buffers (increased window for better smoothing)
+        # Stability buffers
         self.angle_history = {
             'RIGHT': deque(maxlen=8),
             'LEFT': deque(maxlen=8)
         }
 
-        # State confirmation timers (must hold state before transitioning)
-        self.state_hold_time = 0.15  # seconds to confirm state change
+        # State confirmation timers
+        self.state_hold_time = 0.15
         self.pending_state = {
             'RIGHT': None,
             'LEFT': None
@@ -43,71 +43,52 @@ class RepCounter:
         self.rep_validation_relief = REP_VALIDATION_RELIEF
 
     def process_rep(self, arm, angle, metrics, current_time, history):
-        """
-        ENHANCED: Proper state machine with hysteresis and confirmation delays
-        """
         metrics.angle = angle
         self.angle_history[arm].append(angle)
 
-        # Need enough history for velocity calculation
         if len(self.angle_history[arm]) < 4:
             return
 
-        # Calculate velocity (degrees per frame)
+        # Calculate velocity
         recent_angles = list(self.angle_history[arm])
         velocity = abs(recent_angles[-1] - recent_angles[-4]) / 3
         
-        # Calculate acceleration (change in velocity)
-        if len(recent_angles) >= 6:
-            prev_velocity = abs(recent_angles[-4] - recent_angles[-6]) / 2
-            acceleration = abs(velocity - prev_velocity)
-        else:
-            acceleration = 0
-
         prev_stage = metrics.stage
-        metrics.feedback = ""
-
-        # Get thresholds with hysteresis
+        
+        # Get thresholds
         contracted = self.calibration.contracted_threshold
         extended = self.calibration.extended_threshold
         
-        # Determine target state based on angle with hysteresis zones
+        # Determine target state
         target_state = self._determine_target_state(
             angle, contracted, extended, prev_stage
         )
         
-        # State confirmation logic - prevents jitter
+        # State confirmation
         if target_state != prev_stage:
             if self.pending_state[arm] == target_state:
-                # Check if we've held this pending state long enough
                 hold_duration = current_time - self.pending_state_start[arm]
-                
-                # Also require that velocity has settled (not in rapid motion)
                 velocity_settled = velocity < 15
                 
                 if hold_duration >= self.state_hold_time and velocity_settled:
-                    # Confirmed state change
                     self._handle_state_transition(
                         arm, prev_stage, target_state, 
                         metrics, current_time, history
                     )
             else:
-                # New pending state
                 self.pending_state[arm] = target_state
                 self.pending_state_start[arm] = current_time
         else:
-            # Already in target state - clear pending
             self.pending_state[arm] = None
 
-        # Update current rep timing
+        # Update rep timing
         if metrics.stage == ArmStage.UP.value:
             metrics.curr_rep_time = current_time - self.rep_start_time[arm]
 
-        # Form feedback (only when not in rapid motion)
-        if velocity < 20:
-            self._provide_form_feedback(
-                angle, metrics, contracted, extended, arm, history
-            )
+        # --- SMART FEEDBACK & COMPLIMENTS ---
+        self._provide_form_feedback(
+            angle, metrics, contracted, extended, arm, history, velocity, current_time
+        )
 
     def _determine_target_state(self, angle, contracted, extended, current_stage):
         """
@@ -165,51 +146,39 @@ class RepCounter:
             else:
                 return ArmStage.MOVING_DOWN.value
         
-        # Default: maintain current state
         return current_stage
 
     def _handle_state_transition(self, arm, prev_stage, new_stage, 
                                  metrics, current_time, history):
-        """
-        Handle validated state transitions and rep counting
-        """
-        # Update stage
         metrics.stage = new_stage
         
-        # REP COUNTING LOGIC
-        # A rep is counted when transitioning from UP to MOVING_DOWN or DOWN
-        # This ensures the full curl was completed
+        # Count rep (End of Cycle)
         if prev_stage == ArmStage.UP.value:
             if new_stage in [ArmStage.MOVING_DOWN.value, ArmStage.DOWN.value]:
-                # Calculate rep time
                 rep_time = current_time - metrics.last_down_time
-                
-                # Validate rep duration (prevents false counts)
                 if rep_time >= self.min_rep_duration:
                     metrics.rep_count += 1
                     metrics.rep_time = rep_time
-                    
-                    # Update minimum rep time
                     if metrics.min_rep_time == 0:
                         metrics.min_rep_time = rep_time
                     else:
                         metrics.min_rep_time = min(rep_time, metrics.min_rep_time)
-                    
-                    # Reset for next rep
                     metrics.last_down_time = current_time
                     metrics.curr_rep_time = 0
+                    
+                    # TRIGGER COMPLIMENT ON REP COMPLETE
+                    self.last_rep_time[arm] = current_time
+                    self.current_compliment[arm] = random.choice(self.compliments)
         
-        # Start timing when entering DOWN state (beginning of rep)
         elif new_stage == ArmStage.DOWN.value:
             self.rep_start_time[arm] = current_time
         
-        # Track when entering UP state
         elif new_stage == ArmStage.UP.value:
             if self.rep_start_time[arm] == 0:
                 self.rep_start_time[arm] = current_time
 
     def _provide_form_feedback(self, angle, metrics, contracted, 
-                               extended, arm, history):
+                               extended, arm, history, velocity, current_time):
         """
         Provide form feedback based on angle and stage
         ENHANCED: Range of Motion guidance uses the relaxed thresholds 
@@ -240,15 +209,23 @@ class RepCounter:
                 if angle > effective_contracted + 10:  # Not quite at peak
                     metrics.feedback = "Curl Higher"
                     setattr(history, feedback_key, getattr(history, feedback_key) + 1)
+                    return
             
             elif metrics.stage == ArmStage.DOWN.value or metrics.stage == ArmStage.MOVING_DOWN.value:
                 # Use effective_extended for comparison
                 if angle < effective_extended - 10:  # Not quite at bottom
                     metrics.feedback = "Extend Fully"
                     setattr(history, feedback_key, getattr(history, feedback_key) + 1)
+                    return
+
+        # 3. POSITIVE REINFORCEMENT (Default)
+        # Show "Great Job" for 2 seconds after a rep, otherwise "Maintain Form"
+        if (current_time - self.last_rep_time[arm]) < 2.0:
+            metrics.feedback = self.current_compliment[arm]
+        else:
+            metrics.feedback = "Maintain Form"
 
     def reset_arm(self, arm):
-        """Reset tracking for specific arm"""
         self.angle_history[arm].clear()
         self.pending_state[arm] = None
         self.pending_state_start[arm] = 0

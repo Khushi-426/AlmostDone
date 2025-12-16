@@ -1,3 +1,4 @@
+# workout_session.py
 """
 Main workout session manager - OPTIMIZED FOR SPEED & ACCURACY
 """
@@ -150,27 +151,29 @@ class WorkoutSession:
         self.phase = WorkoutPhase.CALIBRATION
     
     def stop(self):
-        """Clean up session resources"""
         from constants import WorkoutPhase
         
-        if self.cap:
+        if self.cap is not None: 
             self.cap.release()
-        if self.holistic_model:
+            
+        if self.holistic_model is not None:
             self.holistic_model.close()
             self.holistic_model = None
-        
+            
         self.phase = WorkoutPhase.INACTIVE
-    
+
+    def set_listening(self, active: bool):
+        self.listening_mode = active
+
     def process_frame(self) -> Tuple[Optional[np.ndarray], bool]:
         """Process single frame - OPTIMIZED FOR SPEED"""
         from constants import WorkoutPhase
         
-        if not self.cap or not self.cap.isOpened():
+        if self.cap is None or not self.cap.isOpened(): 
             return None, False
-        
+            
         success, image = self.cap.read()
-        if not success:
-            return None, False
+        if not success: return None, False
         
         # FIX: Ensure non-mirrored (Observer) view for correct form perception 
         image = cv2.flip(image, 1)
@@ -178,13 +181,21 @@ class WorkoutSession:
         # MediaPipe processing - minimal overhead
         image.flags.writeable = False
         image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
+        
         results = self.holistic_model.process(image)
+        
         image.flags.writeable = True
         image = cv2.cvtColor(image, cv2.COLOR_RGB2BGR)
         
+        if self.listening_mode:
+            image = cv2.flip(image, 1)
+            cv2.putText(image, "LISTENING...", (50, 50), cv2.FONT_HERSHEY_SIMPLEX, 1, (255, 255, 255), 2)
+            return image, True
+
         current_time = time.time()
         
-        # Handle different phases
+        self.gesture_detected = self.pose_processor.detect_v_sign(results)
+
         if self.phase == WorkoutPhase.CALIBRATION:
             self._process_calibration(results, current_time)
         elif self.phase == WorkoutPhase.COUNTDOWN:
@@ -197,7 +208,6 @@ class WorkoutSession:
         return image, True
     
     def _process_calibration(self, results, current_time: float):
-        """Handle calibration phase"""
         from constants import WorkoutPhase
         complete = self.calibration_manager.process_frame(results, current_time)
         if complete:
@@ -209,7 +219,6 @@ class WorkoutSession:
              self.ghost_pose.color = "GRAY"
     
     def _process_countdown(self, current_time: float):
-        """Handle countdown phase"""
         from constants import WorkoutPhase
         elapsed = current_time - self.start_time
         if elapsed >= self.countdown_time:
@@ -498,6 +507,8 @@ class WorkoutSession:
             
             'status': self.phase.value,
             'remaining': self.countdown_remaining,
+            'gesture': 'V_SIGN' if self.gesture_detected else None,
+            'listening': self.listening_mode,
             'calibration': {
                 'active': self.calibration_manager.data.active,
                 'message': self.calibration_manager.data.message,
@@ -520,16 +531,8 @@ class WorkoutSession:
             'exercise_name': self.exercise_config.name, 
             'duration': round(self.history.time[-1] if self.history.time else 0, 2),
             'summary': {
-                'RIGHT': {
-                    'total_reps': self.arm_metrics['RIGHT'].rep_count,
-                    'min_time': round(self.arm_metrics['RIGHT'].min_rep_time, 2),
-                    'error_count': self.history.right_feedback_count
-                },
-                'LEFT': {
-                    'total_reps': self.arm_metrics['LEFT'].rep_count,
-                    'min_time': round(self.arm_metrics['LEFT'].min_rep_time, 2),
-                    'error_count': self.history.left_feedback_count
-                }
+                'RIGHT': {'total_reps': self.arm_metrics['RIGHT'].rep_count, 'min_time': round(self.arm_metrics['RIGHT'].min_rep_time, 2), 'error_count': self.history.right_feedback_count},
+                'LEFT': {'total_reps': self.arm_metrics['LEFT'].rep_count, 'min_time': round(self.arm_metrics['LEFT'].min_rep_time, 2), 'error_count': self.history.left_feedback_count}
             },
             'calibration': {
                 'extended_threshold': self.calibration_manager.data.extended_threshold,
