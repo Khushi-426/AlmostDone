@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { fetchAICommentary } from '../services/aiService';
-import { Mic } from 'lucide-react';
+import { Mic, Eye, EyeOff, Volume2, VolumeX, Ghost } from 'lucide-react';
 
 // --- 3D IMPORTS ---
 import { Canvas, useFrame } from '@react-three/fiber';
@@ -67,6 +67,11 @@ const AICoach = ({ data, feedback, exerciseName, active, gesture, onCommand, onL
     const [botState, setBotState] = useState('IDLE'); 
     const [micError, setMicError] = useState(false);
     
+    // --- CONTROLS ---
+    const [showVisuals, setShowVisuals] = useState(true); // Toggle 3D Avatar (Iron Man)
+    const [isMuted, setIsMuted] = useState(false);        // Toggle Mute
+    const [ghostEnabled, setGhostEnabled] = useState(false); // Toggle Ghost Skeleton Overlay (DEFAULT: OFF)
+    
     const recognitionRef = useRef(null);
     const isListeningForWakeWord = useRef(true);
     const isBotSpeaking = useRef(false);
@@ -74,9 +79,24 @@ const AICoach = ({ data, feedback, exerciseName, active, gesture, onCommand, onL
     const listenTimeoutRef = useRef(null);
     const lastFeedbackRef = useRef("");
 
+    // --- NEW: Toggle Ghost Overlay Function ---
+    const toggleGhostOverlay = async () => {
+        try {
+            await fetch('http://localhost:5000/toggle_ghost', { method: 'POST' });
+            setGhostEnabled(!ghostEnabled);
+        } catch (error) {
+            console.error("Failed to toggle ghost overlay:", error);
+        }
+    };
+
     // --- 1. SEAMLESS TTS LOGIC ---
     const speak = (text, onEndCallback = null) => {
         if (!window.speechSynthesis) return;
+        
+        if (isMuted) {
+            if (onEndCallback) onEndCallback();
+            return; 
+        }
         
         isBotSpeaking.current = true;
         window.speechSynthesis.cancel();
@@ -165,8 +185,6 @@ const AICoach = ({ data, feedback, exerciseName, active, gesture, onCommand, onL
 
         recognition.onresult = async (event) => {
             const transcript = event.results[event.results.length - 1][0].transcript.trim().toLowerCase();
-            console.log("Heard:", transcript);
-
             const isPriority = isStopCommand(transcript);
 
             if (isPriority) {
@@ -188,7 +206,7 @@ const AICoach = ({ data, feedback, exerciseName, active, gesture, onCommand, onL
             }
             
             if (isListeningForWakeWord.current) {
-                if (transcript.includes("madona") || transcript.includes("madonna") || transcript.includes("hey bot")) {
+                if (transcript.includes("hey bot") || transcript.includes("physio")) {
                     activateListeningMode();
                 }
             } 
@@ -214,11 +232,9 @@ const AICoach = ({ data, feedback, exerciseName, active, gesture, onCommand, onL
         };
     }, [active]);
 
-    // --- 4. GESTURE TRIGGER (FIXED) ---
+    // --- 4. GESTURE TRIGGER ---
     useEffect(() => {
-        // [FIX] Removed "botState === IDLE" check. Now FORCE triggers if V_SIGN is seen.
         if (gesture === 'V_SIGN' && lastGestureRef.current !== 'V_SIGN') {
-            console.log("✌️ V-Sign Triggered (FORCE)");
             activateListeningMode();
         }
         lastGestureRef.current = gesture;
@@ -243,28 +259,23 @@ const AICoach = ({ data, feedback, exerciseName, active, gesture, onCommand, onL
             };
             
             const aiResponse = await fetchAICommentary(context, text);
-            console.log("🤖 GEMINI REPLIED:", aiResponse);
             
             if (aiResponse.includes("ACTION: RECALIBRATE")) {
-                executeCommand("recalibrate", "On it. Recalibrating.");
+                executeCommand("recalibrate", "Recalibrating.");
             } else if (aiResponse.includes("ACTION: STOP")) {
-                executeCommand("stop", "Stopping session.");
-            } else if (aiResponse.includes("ACTION: STATS")) {
-                const r = data?.RIGHT?.rep_count || 0;
-                const l = data?.LEFT?.rep_count || 0;
-                speak(`You have done ${r+l} reps total.`, () => deactivateListeningMode());
+                executeCommand("stop", "Stopping.");
             } else {
                 speak(aiResponse, () => deactivateListeningMode());
             }
         } catch (error) {
-            console.error("AI Connection Error:", error);
-            speak("I'm having trouble connecting to my brain.", () => deactivateListeningMode());
+            speak("Connection error.", () => deactivateListeningMode());
         }
     };
 
     useEffect(() => {
         if (!active || botState !== 'IDLE' || !isListeningForWakeWord.current || isBotSpeaking.current) return;
         const currentFeedback = feedback;
+        
         if (currentFeedback && currentFeedback !== lastFeedbackRef.current) {
              lastFeedbackRef.current = currentFeedback;
              if (!currentFeedback.includes("MAINTAIN") && !currentFeedback.includes("Initializing")) {
@@ -277,13 +288,60 @@ const AICoach = ({ data, feedback, exerciseName, active, gesture, onCommand, onL
     return (
         <div style={{ height: '100%', width: '100%', background: 'linear-gradient(180deg, #F0F8FF 0%, #E6F4EA 100%)', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', position: 'relative', borderTop: '2px solid #eee' }}>
             
+            {/* --- CONTROL BUTTONS (Top Right) --- */}
+            <div style={{ position: 'absolute', top: '10px', right: '10px', display: 'flex', gap: '8px', zIndex: 20 }}>
+                
+                {/* 1. Ghost Toggle (NEW) */}
+                <button 
+                    onClick={toggleGhostOverlay}
+                    style={{ background: 'rgba(255,255,255,0.8)', border: 'none', borderRadius: '50%', padding: '8px', cursor: 'pointer', boxShadow: '0 2px 5px rgba(0,0,0,0.1)' }}
+                    title={ghostEnabled ? "Switch to CV Dots" : "Show Ghost Skeleton"}
+                >
+                    <Ghost size={18} color={ghostEnabled ? "#2196F3" : "#999"} />
+                </button>
+
+                {/* 2. Visual Toggle (Iron Man) */}
+                <button 
+                    onClick={() => setShowVisuals(!showVisuals)} 
+                    style={{ background: 'rgba(255,255,255,0.8)', border: 'none', borderRadius: '50%', padding: '8px', cursor: 'pointer', boxShadow: '0 2px 5px rgba(0,0,0,0.1)' }}
+                    title={showVisuals ? "Switch to Simple Mode" : "Show 3D Avatar"}
+                >
+                    {showVisuals ? <Eye size={18} color="#555" /> : <EyeOff size={18} color="#999" />}
+                </button>
+
+                {/* 3. Mute Toggle */}
+                <button 
+                    onClick={() => {
+                        const newState = !isMuted;
+                        setIsMuted(newState);
+                        if (newState) window.speechSynthesis.cancel();
+                    }} 
+                    style={{ background: 'rgba(255,255,255,0.8)', border: 'none', borderRadius: '50%', padding: '8px', cursor: 'pointer', boxShadow: '0 2px 5px rgba(0,0,0,0.1)' }}
+                    title={isMuted ? "Unmute Voice" : "Mute Voice"}
+                >
+                    {isMuted ? <VolumeX size={18} color="#D32F2F" /> : <Volume2 size={18} color="#555" />}
+                </button>
+            </div>
+
+            {/* --- AVATAR DISPLAY --- */}
             <div style={{ width: '250px', height: '250px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                <Canvas shadows dpr={[1, 2]} camera={{ position: [0, 0, 4.5], fov: 50 }}>
-                    <ambientLight intensity={0.7} />
-                    <spotLight position={[10, 10, 10]} angle={0.15} penumbra={1} intensity={1.5} castShadow />
-                    <Environment preset="city" />
-                    <Avatar3D state={micError ? 'ERROR' : botState} />
-                </Canvas>
+                {showVisuals ? (
+                    <Canvas shadows dpr={[1, 2]} camera={{ position: [0, 0, 4.5], fov: 50 }}>
+                        <ambientLight intensity={0.7} />
+                        <spotLight position={[10, 10, 10]} angle={0.15} penumbra={1} intensity={1.5} castShadow />
+                        <Environment preset="city" />
+                        <Avatar3D state={micError ? 'ERROR' : botState} />
+                    </Canvas>
+                ) : (
+                    <div style={{ 
+                        width: '40px', 
+                        height: '40px', 
+                        borderRadius: '50%', 
+                        background: micError ? '#D32F2F' : (botState === 'LISTENING' ? '#2196F3' : '#69B341'), 
+                        boxShadow: '0 0 15px rgba(0,0,0,0.2)',
+                        transition: 'background 0.3s ease'
+                    }}></div>
+                )}
             </div>
 
             <AnimatePresence mode='wait'>

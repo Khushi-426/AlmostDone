@@ -1,14 +1,20 @@
 """
 AI Engine & Analytics Logic
 Handles data processing, statistical analysis, and recovery predictions.
-NOW INTEGRATED WITH LIVE ML MODEL (rehab_model.pkl)
+NOW INTEGRATED WITH LIVE ML MODEL (rehab_model.pkl) AND GEMINI API
 """
 import random
 import time
 import os
 import joblib
+import requests
+import json
 import numpy as np
 from datetime import datetime, timedelta
+from dotenv import load_dotenv
+
+# Ensure environment variables are loaded
+load_dotenv()
 
 class AIEngine:
     
@@ -68,8 +74,7 @@ class AIEngine:
             # Calculate real accuracy based on recorded errors
             acc = 100
             if reps > 0:
-                # Standard calculation: (Total Reps - Errors) / Total Reps * 100
-                acc = max(0, int((reps - errors) / reps * 100)) # << FIX APPLIED: Changed heuristic to standard accuracy
+                acc = max(0, int((reps - errors) / reps * 100)) 
             
             date_str = s.get('date', 'Unknown')
             history.append({
@@ -138,7 +143,6 @@ class AIEngine:
         stability_score = 0
         session_history = []
 
-        # If user has only 1 session, add a dummy "Baseline" point
         if len(recent_sessions) == 1:
             try:
                 base_date = datetime.strptime(recent_sessions[0]['date'], "%Y-%m-%d")
@@ -150,14 +154,9 @@ class AIEngine:
         for s in sessions:
             reps = s.get('total_reps', 1) or 1
             errors = s.get('total_errors', 0)
-            
-            # Calculate accuracy based on successful reps (Reps - Errors) / Reps
-            acc = max(0, int((reps - errors) / reps * 100)) # << FIX APPLIED: Changed heuristic to standard accuracy
-            
-            # Predict ROM based on Accuracy (Better form = Better ROM potential)
+            acc = max(0, int((reps - errors) / reps * 100)) 
             base_rom = 85 + (acc * 0.5) 
-            rom_val = min(145, max(60, int(base_rom))) # Removed random jitter for stability
-            
+            rom_val = min(145, max(60, int(base_rom))) 
             date_label = s.get('date', 'Unknown')
             
             session_history.append({
@@ -171,9 +170,7 @@ class AIEngine:
         for s in recent_sessions:
             reps = s.get('total_reps', 1) or 1
             errors = s.get('total_errors', 0)
-            # Calculate accuracy based on successful reps (Reps - Errors) / Reps
-            acc = max(0, int((reps - errors) / reps * 100)) # << FIX APPLIED: Changed heuristic to standard accuracy
-            
+            acc = max(0, int((reps - errors) / reps * 100)) 
             base_rom = 85 + (acc * 0.5)
             rom_val = min(145, max(60, int(base_rom)))
             
@@ -201,7 +198,6 @@ class AIEngine:
             recommendations.append("Consistency: Aim for 4+ days/week to prevent regression.")
 
         # 5. HOTSPOTS
-        # Based on actual error rate rather than pure random
         severity = 100 - avg_stability
         hotspots = {
             'shoulder': int(severity * 0.7),
@@ -220,6 +216,80 @@ class AIEngine:
             'hotspots': hotspots,
             'session_history': session_history
         }
+
+    def generate_commentary(self, context, query, history):
+        """
+        Generates contextual AI feedback using Google Gemini API.
+        Falls back to rule-based logic if API fails.
+        """
+        api_key = os.getenv("GEMINI_API_KEY")
+        
+        # 1. API CALL TO GEMINI
+        if api_key:
+            print(f"🤖 Connecting to Gemini... Query: {query}")
+            try:
+                # Prepare context for the LLM
+                reps = context.get('reps', 0)
+                errors = context.get('errors', 0)
+                feedback = context.get('feedback', 'None')
+                exercise = context.get('exercise', 'Workout')
+                
+                system_prompt = (
+                    f"You are a Physio AI Coach. The user is doing {exercise}. "
+                    f"Current Stats: {reps} Reps, {errors} Errors. "
+                    f"Recent Form Feedback: {feedback}. "
+                    "Answer the user's question briefly (max 2 sentences) and motivatingly. "
+                    "Focus on form correction if errors are high."
+                )
+                
+                # FIX: Updated to 'gemini-2.0-flash-lite' to avoid 429 quota errors
+                url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash-lite:generateContent?key={api_key}"
+                headers = {'Content-Type': 'application/json'}
+                payload = {
+                    "contents": [{
+                        "parts": [{
+                            "text": f"{system_prompt}\nUser Question: {query}"
+                        }]
+                    }]
+                }
+                
+                response = requests.post(url, headers=headers, json=payload, timeout=5)
+                
+                if response.status_code == 200:
+                    data = response.json()
+                    ai_text = data['candidates'][0]['content']['parts'][0]['text']
+                    print("✅ Gemini Response Received")
+                    return ai_text
+                else:
+                    print(f"⚠️ Gemini API Error {response.status_code}: {response.text}")
+
+            except Exception as e:
+                print(f"❌ Gemini Connection Failed: {e}")
+
+        # 2. FALLBACK LOGIC (If API fails or no key)
+        print("⚠️ Using Rule-Based Fallback")
+        return self._rule_based_commentary(context, query)
+
+    def _rule_based_commentary(self, context, query):
+        """Internal fallback method for offline mode"""
+        query = query.lower()
+        reps = context.get('reps', 0)
+        raw_feedback = context.get('feedback', '')
+        feedback_text = str(raw_feedback) if raw_feedback else ""
+        exercise = context.get('exercise', 'Exercise')
+
+        if "form" in query or "doing" in query or "correct" in query:
+            if "bad" in feedback_text.lower() or "fix" in feedback_text.lower():
+                return f"I noticed some issues. {feedback_text}. Try to move slower."
+            return f"Your form looks solid! You've completed {reps} reps."
+            
+        elif "reps" in query or "count" in query:
+            return f"You have completed {reps} reps so far."
+            
+        elif "tired" in query or "hard" in query:
+            return "You're doing great! Take a deep breath and give me 3 more perfect reps."
+            
+        return f"I'm tracking your {exercise}. You're at {reps} reps. Keep going!"
 
 # Initial load when module is imported
 AIEngine.load_model()

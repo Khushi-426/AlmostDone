@@ -1,7 +1,8 @@
 """
 Flask application with API routes - THREADING MODE (No Eventlet)
+INTEGRATED WITH: MongoDB, Ghost Toggle, Smart AI Coach, and Streaming
 """
-from flask import Flask, Response, jsonify, request
+from flask import Flask, Response, jsonify, request, render_template
 import cv2
 import mediapipe as mp
 import numpy as np
@@ -12,6 +13,8 @@ import random
 import string
 import requests
 import certifi
+import threading
+import logging
 from collections import deque
 from datetime import datetime
 from flask_cors import CORS
@@ -22,13 +25,8 @@ from flask_mail import Mail, Message
 from flask_socketio import SocketIO, emit
 from bson.objectid import ObjectId
 
-# --- OPTIONAL: Google Auth Library (Requested) ---
-# We import this to satisfy dependencies, though we use requests 
-# for Access Token validation to match the current Frontend flow.
-from google.oauth2 import id_token
-from google.auth.transport import requests as google_requests
-
-# --- IMPORT CUSTOM AI MODULE ---
+# --- IMPORT CUSTOM AI MODULES ---
+from workout_session import WorkoutSession
 from ai_engine import AIEngine
 from constants import EXERCISE_PRESETS
 
@@ -45,6 +43,10 @@ bcrypt = Bcrypt(app)
 
 # SWITCHED TO THREADING MODE (Removes Eventlet dependency)
 socketio = SocketIO(app, cors_allowed_origins="*", async_mode="threading")
+
+# Configure logging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
 # ----------------------------------------------------
 # 1. MAIL CONFIGURATION
@@ -102,56 +104,69 @@ except Exception as e:
 # ----------------------------------------------------
 workout_session = None
 last_session_report = None
+session_lock = threading.Lock()
+
+def get_camera_index():
+    """Detects available camera index."""
+    for i in range(2):
+        cap = cv2.VideoCapture(i)
+        if cap.isOpened():
+            cap.release()
+            return i
+    return 0 
 
 def init_session(exercise_name="Bicep Curl"):
     """Initialize a new workout session, ensuring the old one is closed."""
     global workout_session, last_session_report
     
-    # 1. Force close existing session
-    if workout_session:
-        try:
-            print("🛑 Stopping previous session...")
-            workout_session.stop()
-        except Exception as e:
-            print(f"⚠️ Error stopping previous session: {e}")
-        finally:
-            workout_session = None
+    with session_lock:
+        # 1. Force close existing session
+        if workout_session:
+            try:
+                print("🛑 Stopping previous session...")
+                workout_session.stop()
+            except Exception as e:
+                print(f"⚠️ Error stopping previous session: {e}")
+            finally:
+                workout_session = None
 
-    # Reset last report for new session
-    last_session_report = None
-    
-    # 2. Start new session
-    print(f"🎥 Initializing Camera for {exercise_name}...")
-    from workout_session import WorkoutSession
-    workout_session = WorkoutSession(exercise_name)
+        # Reset last report for new session
+        last_session_report = None
+        
+        # 2. Start new session
+        print(f"🎥 Initializing Camera for {exercise_name}...")
+        workout_session = WorkoutSession(exercise_name)
+        
+        # Camera Initialization
+        cam_idx = get_camera_index()
+        workout_session.cap = cv2.VideoCapture(cam_idx)
+        
+        if not workout_session.cap.isOpened():
+            print("❌ Camera not accessible")
+            workout_session = None
+            raise Exception("Camera not accessible")
+            
+        workout_session.start()
 
 def generate_video_frames():
     """Generator function to stream video frames."""
     from constants import WorkoutPhase
     global workout_session
     
-    # Capture local reference
-    current_session = workout_session
-    
-    if current_session is None:
-        return
+    while True:
+        if workout_session is None or workout_session.phase == WorkoutPhase.INACTIVE:
+            time.sleep(0.1)
+            continue
 
-    # Loop to capture frames
-    while current_session.phase != WorkoutPhase.INACTIVE:
         try:
-            if current_session is None:
-                break
-
-            frame, should_continue = current_session.process_frame()
+            frame, valid = workout_session.process_frame()
             
-            if not should_continue or frame is None:
-                break
+            if not valid or frame is None:
+                continue
 
             # Emit real-time data to frontend via WebSocket
-            socketio.emit("workout_update", current_session.get_state_dict())
+            socketio.emit("workout_update", workout_session.get_state_dict())
             
-            # REMOVED: time.sleep(0.01) to allow thread to run at max speed for smoother rendering
-
             # Encode frame for HTTP Stream
             ret, buffer = cv2.imencode(".jpg", frame)
             if ret:
@@ -173,13 +188,7 @@ def _get_frontend_exercise_list():
         "Bicep Curl": {
             "category": "Strength",
             "description": "A fundamental exercise for building arm strength and definition.",
-            "instructions": [
-                "Stand tall with feet shoulder-width apart.",
-                "Hold dumbbells with palms facing forward.",
-                "Keep elbows close to your torso at all times.",
-                "Curl the weights up while contracting biceps.",
-                "Lower the weights slowly."
-            ],
+            "instructions": ["Stand tall.", "Hold dumbbells.", "Curl weights up.", "Lower slowly."],
             "difficulty": "Beginner",
             "duration": "5 Mins",
             "color": "#E3F2FD",
@@ -189,12 +198,7 @@ def _get_frontend_exercise_list():
         "Knee Lift": {
             "category": "Mobility",
             "description": "Improves hip mobility and balance.",
-            "instructions": [
-                "Stand straight with feet together.",
-                "Lift one knee up towards your chest.",
-                "Hold for a second.",
-                "Lower slowly and switch legs."
-            ],
+            "instructions": ["Stand straight.", "Lift knee to chest.", "Hold.", "Lower slowly."],
             "difficulty": "Beginner",
             "duration": "5 Mins",
             "color": "#E8F5E9",
@@ -204,11 +208,7 @@ def _get_frontend_exercise_list():
         "Shoulder Press": {
             "category": "Strength",
             "description": "Builds shoulder and upper arm strength.",
-            "instructions": [
-                "Hold dumbbells at shoulder height.",
-                "Press weights upwards.",
-                "Lower back down with control."
-            ],
+            "instructions": ["Hold weights at shoulder height.", "Press upwards.", "Lower with control."],
             "difficulty": "Intermediate",
             "duration": "8 Mins",
             "color": "#FFF3E0",
@@ -218,12 +218,7 @@ def _get_frontend_exercise_list():
         "Squat": {
             "category": "Lower Body",
             "description": "Compound movement for legs and core.",
-            "instructions": [
-                "Stand with feet shoulder-width apart.",
-                "Push hips back and bend knees.",
-                "Keep chest up.",
-                "Push through heels to return."
-            ],
+            "instructions": ["Feet shoulder-width.", "Push hips back.", "Keep chest up.", "Push through heels."],
             "difficulty": "Intermediate",
             "duration": "10 Mins",
             "color": "#F3E5F5",
@@ -233,12 +228,7 @@ def _get_frontend_exercise_list():
         "Standing Row": {
             "category": "Back & Core",
             "description": "Strengthens the upper back.",
-            "instructions": [
-                "Hinge forward slightly.",
-                "Pull weights towards your waist.",
-                "Squeeze shoulder blades.",
-                "Lower weights with control."
-            ],
+            "instructions": ["Hinge forward.", "Pull weights to waist.", "Squeeze blades.", "Lower."],
             "difficulty": "Intermediate",
             "duration": "7 Mins",
             "color": "#FFEBEE",
@@ -290,11 +280,11 @@ def handle_stop_session(data):
 
     try:
         print("🛑 Stop session command received")
-        # SAVE REPORT BEFORE STOPPING
-        last_session_report = workout_session.get_final_report()
-        
-        workout_session.stop()
-        workout_session = None 
+        with session_lock:
+            # SAVE REPORT BEFORE STOPPING
+            last_session_report = workout_session.get_final_report()
+            workout_session.stop()
+            workout_session = None 
 
         if email and sessions_collection is not None:
             r = last_session_report["summary"]["RIGHT"]
@@ -314,7 +304,6 @@ def handle_stop_session(data):
         print(f"Stop session error: {e}")
         emit("session_stopped", {"status": "error", "message": str(e)})
 
-# New socket event to handle AICoach listening mode toggle
 @socketio.on("toggle_listening")
 def handle_toggle_listening(data):
     global workout_session
@@ -322,7 +311,6 @@ def handle_toggle_listening(data):
         active = data.get("active", False)
         print(f"🎙️ Setting listening mode to: {active}")
         workout_session.set_listening(active)
-
 
 # ----------------------------------------------------
 # 6. ANALYTICS & AI ROUTES
@@ -361,10 +349,24 @@ def ai_prediction():
 
     return jsonify(prediction)
 
-@app.route("/api/ai_coach", methods=["POST"]) # <-- NEW ROUTE ADDED HERE
+@app.route("/api/ai_coach", methods=["POST", "OPTIONS"])
 def ai_coach_commentary():
     """Handles real-time commentary from the AI Coach engine."""
+    if request.method == 'OPTIONS':
+        return jsonify({}), 200
+        
     data = request.get_json(silent=True) or {}
+    
+    # --- HANDLING LISTENING TOGGLE VIA HTTP (Backup) ---
+    if 'listening' in data:
+        global workout_session
+        if workout_session:
+            active = data['listening']
+            workout_session.set_listening(active)
+            print(f"🎙️ Setting listening mode to: {active}")
+            return jsonify({"status": "updated", "listening": active})
+    # ---------------------------------------------------
+
     context = data.get("context")
     query = data.get("query")
     history = data.get("history", [])
@@ -381,7 +383,19 @@ def ai_coach_commentary():
         return jsonify({"error": str(e)}), 500
 
 # ----------------------------------------------------
-# 7. AUTH & OTHER ROUTES
+# 7. NEW: GHOST TOGGLE ROUTE
+# ----------------------------------------------------
+@app.route('/toggle_ghost', methods=['POST'])
+def toggle_ghost():
+    """Toggles the ghost overlay visibility"""
+    global workout_session
+    if workout_session:
+        new_state = workout_session.toggle_ghost()
+        return jsonify({"status": "success", "ghost_visible": new_state})
+    return jsonify({"status": "error", "message": "No active session"}), 400
+
+# ----------------------------------------------------
+# 8. AUTH & OTHER ROUTES
 # ----------------------------------------------------
 @app.route("/api/auth/send-otp", methods=["POST"])
 def send_otp():
@@ -465,24 +479,18 @@ def signup_verify():
 # --- GOOGLE AUTH ROUTE ---
 @app.route("/api/auth/google", methods=["POST"])
 def google_auth():
-    """Handles Google Login/Signup by verifying token and checking DB."""
-    # EDGE CASE: DB NOT CONNECTED
     if users_collection is None:
         print("❌ Login failed: Database not connected")
         return jsonify({"error": "Database unavailable. Check server logs."}), 503
 
     data = request.get_json(silent=True) or {}
-    token = data.get("token") # This is an ACCESS TOKEN from frontend
+    token = data.get("token") 
     role = data.get("role", "patient")
 
     if not token:
         return jsonify({"error": "Google token is required"}), 400
 
     try:
-        # NOTE: Frontend sends an ACCESS TOKEN, not an ID TOKEN.
-        # We must use requests.get() to verify it against Google's UserInfo API.
-        # google-auth library (id_token.verify_oauth2_token) requires an ID Token (JWT).
-        
         google_response = requests.get(
             f"https://www.googleapis.com/oauth2/v1/userinfo?access_token={token}",
             headers={"Accept": "application/json"}
@@ -498,18 +506,15 @@ def google_auth():
         if not email:
             return jsonify({"error": "Email not found in Google profile"}), 400
 
-        # Check if user exists in DB
         user = users_collection.find_one({"email": email})
         
         if user:
-            # User exists -> LOGIN
             return jsonify({
                 "email": user["email"],
                 "role": user.get("role", "patient"),
                 "name": user["name"]
             }), 200
         else:
-            # User does not exist -> REGISTER
             new_user = {
                 "email": email,
                 "name": name,
@@ -574,10 +579,13 @@ def therapist_notifications():
     return jsonify(response), 200
 
 # ----------------------------------------------------
-# 8. STREAMING ROUTES
+# 9. STREAMING ROUTES
 # ----------------------------------------------------
-@app.route("/start_tracking", methods=["POST"])
+@app.route("/start_tracking", methods=["POST", "OPTIONS"])
 def start_tracking():
+    if request.method == 'OPTIONS':
+        return jsonify({}), 200
+
     data = request.get_json(silent=True) or {}
     exercise = data.get("exercise", "Bicep Curl")
 
@@ -585,15 +593,24 @@ def start_tracking():
 
     try:
         init_session(exercise)
-        
         if workout_session:
-            workout_session.start()
             return jsonify({"status": "started", "exercise": exercise})
         else:
             return jsonify({"error": "Failed to initialize workout session"}), 500
     except Exception as e:
         print(f"❌ Error in start_tracking: {e}")
         return jsonify({"error": str(e)}), 500
+
+@app.route("/stop_tracking", methods=["POST"])
+def stop_tracking():
+    global workout_session, last_session_report
+    with session_lock:
+        if workout_session:
+            last_session_report = workout_session.get_final_report()
+            workout_session.stop()
+            workout_session = None
+            return jsonify({"status": "stopped", "report": last_session_report})
+    return jsonify({"status": "no_active_session"})
 
 @app.route("/video_feed")
 def video_feed():
@@ -615,9 +632,8 @@ def report_data():
     return jsonify({"error": "No session data found"})
 
 # ----------------------------------------------------
-# 9. RUN SERVER
+# 10. RUN SERVER
 # ----------------------------------------------------
 if __name__ == "__main__":
     print("🚀 Starting Server with THREADING on Port 5001...")
-    # 'allow_unsafe_werkzeug' is needed when running threading mode with socketio in some envs
     socketio.run(app, host="0.0.0.0", port=5001, debug=True, allow_unsafe_werkzeug=True)
