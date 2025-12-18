@@ -1,287 +1,359 @@
-import React, { useState, useEffect } from "react";
+import React, { useEffect, useState } from "react";
 import axios from "axios";
 import { useNavigate } from "react-router-dom";
 
 const TherapistPatientMonitoring = () => {
   const navigate = useNavigate();
   const [patients, setPatients] = useState([]);
+  const [search, setSearch] = useState("");
+  const [filter, setFilter] = useState("All");
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState(null);
+
+  // 🔹 NEW: floating pill visibility
+  const [showBack, setShowBack] = useState(true);
 
   useEffect(() => {
-    fetchRealPatients();
+    fetchPatients();
+
+    // 🔹 NEW: hide/show floating pill on scroll
+    let lastScrollY = window.scrollY;
+
+    const handleScroll = () => {
+      if (window.scrollY > lastScrollY && window.scrollY > 80) {
+        setShowBack(false);
+      } else {
+        setShowBack(true);
+      }
+      lastScrollY = window.scrollY;
+    };
+
+    window.addEventListener("scroll", handleScroll);
+    return () => window.removeEventListener("scroll", handleScroll);
   }, []);
 
-  const fetchRealPatients = async () => {
-    try {
-      // Fetch from the API
-      const response = await axios.get(
-        "http://localhost:5001/api/therapist/patients"
-      );
-      setPatients(response.data.patients);
-      setLoading(false);
-    } catch (err) {
-      console.error("Error loading patients:", err);
-      setError("Failed to load patient data from database.");
-      setLoading(false);
-    }
+  const fetchPatients = async () => {
+    const res = await axios.get("http://localhost:5001/api/therapist/patients");
+    setPatients(res.data.patients || []);
+    setLoading(false);
   };
 
-  const handleBack = () => {
-    navigate("/therapist-dashboard");
-  };
+  const filteredPatients = patients.filter((p) => {
+    const matchesSearch = p.name
+      .toLowerCase()
+      .includes(search.toLowerCase());
+    const matchesFilter =
+      filter === "All" ? true : p.status === filter;
+    return matchesSearch && matchesFilter;
+  });
 
-  // Helper to determine color based on status text
-  const getStatusColor = (status) => {
-    switch (status) {
-      case "Stable":
-        return "#52c41a"; // Green
-      case "Alert":
-        return "#faad14"; // Orange
-      case "High Risk":
-        return "#f5222d"; // Red
-      default:
-        return "#d9d9d9"; // Grey
-    }
-  };
+  const getStatus = (status) =>
+    status === "High Risk"
+      ? { bg: "#ffecec", color: "#e53935", label: "High Risk" }
+      : { bg: "#eaffea", color: "#2e7d32", label: "Normal" };
 
-  if (loading)
-    return (
-      <div style={{ padding: "40px", textAlign: "center" }}>
-        Loading real patient data...
-      </div>
-    );
-  if (error)
-    return (
-      <div style={{ padding: "40px", textAlign: "center", color: "red" }}>
-        {error}
-      </div>
-    );
+  const getTrend = (status) =>
+    status === "High Risk"
+      ? { text: "↓ Declining", color: "#e53935", pulse: true }
+      : { text: "↑ Improving", color: "#2e7d32", pulse: false };
+
+  if (loading) return <div style={styles.center}>Loading…</div>;
 
   return (
     <div style={styles.container}>
-      {/* Header */}
-      <div style={styles.headerRow}>
-        <button onClick={handleBack} style={styles.backButton}>
-          ← Back to Dashboard
-        </button>
-        <h2 style={styles.pageTitle}>
-          Patient Monitoring Overview ({patients.length} Active)
-        </h2>
+      {/* FLOATING NAVIGATION PILL */}
+      <div
+        style={{
+          ...styles.floatingBack,
+          transform: showBack ? "translateY(0)" : "translateY(-120%)",
+          opacity: showBack ? 1 : 0,
+        }}
+        onClick={() => navigate("/therapist-dashboard")}
+      >
+        <span style={styles.backIcon}>←</span>
+        <span style={styles.backText}>Dashboard</span>
       </div>
 
-      {/* Legend */}
-      <div style={styles.legendContainer}>
-        <span style={{ fontWeight: "bold", marginRight: "15px" }}>
-          Status Legend:
-        </span>
-        <span style={styles.legendItem}>
-          <span style={{ ...styles.dot, backgroundColor: "#52c41a" }}></span>{" "}
-          Stable (Compliant)
-        </span>
-        <span style={styles.legendItem}>
-          <span style={{ ...styles.dot, backgroundColor: "#faad14" }}></span>{" "}
-          Alert (Low Compliance)
-        </span>
-        <span style={styles.legendItem}>
-          <span style={{ ...styles.dot, backgroundColor: "#f5222d" }}></span>{" "}
-          High Risk (Non-Compliant)
-        </span>
+      <h1 style={styles.title}>
+        Patient Monitoring Overview ({filteredPatients.length} Active)
+      </h1>
+
+      {/* SEARCH + FILTER BAR */}
+      <div style={styles.controls}>
+        <input
+          placeholder="Search patients…"
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+          style={styles.search}
+        />
+
+        <div style={styles.filters}>
+          {["All", "Normal", "High Risk"].map((f) => (
+            <button
+              key={f}
+              onClick={() => setFilter(f)}
+              style={{
+                ...styles.filterBtn,
+                ...(filter === f ? styles.filterActive : {}),
+              }}
+            >
+              {f}
+            </button>
+          ))}
+        </div>
       </div>
 
-      {/* Real Data Grid */}
-      <div style={styles.grid}>
-        {patients.length > 0 ? (
-          patients.map((patient) => {
-            const statusColor = getStatusColor(patient.status);
+      {/* TABLE */}
+      <div style={styles.tableWrapper}>
+        <table style={styles.table}>
+          <thead>
+            <tr>
+              <th>Patient Name</th>
+              <th>Status</th>
+              <th>Compliance</th>
+              <th>Trend</th>
+              <th>Last Session</th>
+              <th>Action</th>
+            </tr>
+          </thead>
 
-            return (
-              <div
-                key={patient.id}
-                style={{
-                  ...styles.card,
-                  borderLeft: `6px solid ${statusColor}`,
-                }}
-              >
-                <div style={styles.cardHeader}>
-                  <h3 style={styles.patientName}>{patient.name}</h3>
-                </div>
+          <tbody>
+            {filteredPatients.map((p, i) => {
+              const status = getStatus(p.status);
+              const trend = getTrend(p.status);
 
-                <div style={styles.infoRow}>
-                  <strong>Email:</strong> {patient.email}
-                </div>
-
-                <div style={styles.infoRow}>
-                  <strong>Status:</strong>
-                  <span
-                    style={{
-                      color: statusColor,
-                      fontWeight: "bold",
-                      marginLeft: "5px",
-                    }}
-                  >
-                    {patient.status}
-                  </span>
-                </div>
-
-                <div style={styles.infoRow}>
-                  <strong>Last Session:</strong> {patient.last_session}
-                </div>
-
-                {/* Compliance Bar */}
-                <div style={{ marginTop: "15px" }}>
-                  <div
-                    style={{
-                      display: "flex",
-                      justifyContent: "space-between",
-                      marginBottom: "5px",
-                    }}
-                  >
-                    <span style={{ fontSize: "0.9rem", fontWeight: "600" }}>
-                      Compliance
-                    </span>
-                    <span style={{ fontSize: "0.9rem" }}>
-                      {patient.compliance}%
-                    </span>
-                  </div>
-                  <div style={styles.progressBarBg}>
-                    <div
-                      style={{
-                        ...styles.progressBarFill,
-                        width: `${patient.compliance}%`,
-                        backgroundColor: statusColor,
-                      }}
-                    ></div>
-                  </div>
-                </div>
-
-                {/* ✅ UPDATED BUTTON: Now navigates to the dynamic detail page */}
-                <button
-                  style={styles.actionButton}
-                  onClick={() =>
-                    navigate(`/therapist/patient-detail/${patient.email}`)
-                  }
+              return (
+                <tr
+                  key={p.email}
+                  className="row"
+                  style={{
+                    background: p.status === "High Risk" ? "#fff5f5" : "#fff",
+                    animation: `fadeIn 0.3s ease ${i * 0.03}s both`,
+                  }}
                 >
-                  View Detailed Report
-                </button>
-              </div>
-            );
-          })
-        ) : (
-          <div
-            style={{
-              gridColumn: "1/-1",
-              textAlign: "center",
-              padding: "40px",
-              color: "#666",
-            }}
-          >
-            No patients found in your MongoDB database. Ask a user to sign up!
-          </div>
-        )}
+                  <td style={styles.name}>{p.name}</td>
+
+                  <td>
+                    <span
+                      style={{
+                        ...styles.badge,
+                        background: status.bg,
+                        color: status.color,
+                      }}
+                    >
+                      {status.label}
+                    </span>
+                  </td>
+
+                  <td>
+                    <div style={styles.progressBg}>
+                      <div
+                        style={{
+                          ...styles.progressFill,
+                          width: `${p.compliance || 0}%`,
+                        }}
+                      />
+                    </div>
+                    <span style={styles.percent}>{p.compliance || 0}%</span>
+                  </td>
+
+                  <td
+                    style={{
+                      color: trend.color,
+                      fontWeight: 600,
+                      animation: trend.pulse ? "pulse 1.5s infinite" : "none",
+                    }}
+                  >
+                    {trend.text}
+                  </td>
+
+                  <td>{p.last_session || "—"}</td>
+
+                  <td>
+                    <button
+                      style={styles.actionBtn}
+                      onClick={() =>
+                        navigate(`/therapist/patient-detail/${p.email}`)
+                      }
+                    >
+                      View Report
+                    </button>
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
       </div>
+
+      {/* ANIMATIONS */}
+      <style>{`
+        thead th {
+          position: sticky;
+          top: 0;
+          background: #f8fafc;
+          z-index: 5;
+        }
+
+        tr.row {
+          transition: all 0.25s ease;
+        }
+
+        tr.row:hover {
+          transform: translateY(-2px);
+          box-shadow: 0 12px 28px rgba(0,0,0,0.12);
+          background: #f9fbff;
+        }
+
+        button:hover {
+          transform: translateY(-1px);
+          box-shadow: 0 8px 18px rgba(30,136,229,0.35);
+        }
+
+        button:active {
+          transform: scale(0.95);
+        }
+
+        @keyframes fadeIn {
+          from { opacity: 0; transform: translateY(6px); }
+          to { opacity: 1; transform: translateY(0); }
+        }
+
+        @keyframes pulse {
+          0% { opacity: 1; }
+          50% { opacity: 0.6; }
+          100% { opacity: 1; }
+        }
+      `}</style>
     </div>
   );
 };
 
-// --- Styles ---
+/* STYLES */
 const styles = {
   container: {
-    padding: "30px",
-    backgroundColor: "#f5f7fa",
-    minHeight: "100vh",
-    fontFamily: "'Inter', sans-serif",
+    height: "100vh",
+    padding: "20px 24px",
+    paddingTop: "96px", // space reserved for floating pill
+    background: "linear-gradient(180deg,#f8fafc,#eef2f7)",
+    fontFamily: "Inter, sans-serif",
+    position: "relative",
   },
-  headerRow: {
-    marginBottom: "20px",
-  },
-  backButton: {
-    background: "none",
-    border: "none",
-    color: "#1890ff",
+
+  /* FLOATING NAV PILL */
+  floatingBack: {
+    position: "fixed",
+    top: "20px",
+    left: "20px",
+    display: "flex",
+    alignItems: "center",
+    gap: "10px",
+    padding: "10px 16px",
+    borderRadius: "999px",
+    background: "rgba(255,255,255,0.75)",
+    backdropFilter: "blur(12px)",
+    border: "1px solid rgba(30,136,229,0.25)",
+    color: "#1e88e5",
+    fontWeight: 600,
     cursor: "pointer",
-    fontSize: "1rem",
-    marginBottom: "10px",
-    padding: 0,
-    textDecoration: "underline",
+    boxShadow: "0 12px 30px rgba(0,0,0,0.12)",
+    transition: "all 0.35s ease",
+    zIndex: 50,
   },
-  pageTitle: {
-    color: "#003a8c",
-    margin: 0,
-    fontSize: "1.8rem",
+  backIcon: {
+    fontSize: "18px",
+    lineHeight: 1,
   },
-  legendContainer: {
-    backgroundColor: "white",
-    padding: "15px 20px",
+  backText: {
+    fontSize: "14px",
+  },
+
+  title: {
+    fontSize: "26px",
+    fontWeight: 700,
+    marginBottom: "16px",
+  },
+  controls: {
+    display: "flex",
+    justifyContent: "space-between",
+    marginBottom: "12px",
+    gap: "12px",
+  },
+  search: {
+    padding: "10px 14px",
+    width: "280px",
     borderRadius: "8px",
-    marginBottom: "30px",
-    boxShadow: "0 2px 5px rgba(0,0,0,0.05)",
-    display: "flex",
-    alignItems: "center",
-    flexWrap: "wrap",
-    gap: "20px",
+    border: "1px solid #d1d5db",
   },
-  legendItem: {
+  filters: {
     display: "flex",
-    alignItems: "center",
-    fontSize: "0.9rem",
-    color: "#555",
+    gap: "8px",
   },
-  dot: {
-    width: "10px",
-    height: "10px",
-    borderRadius: "50%",
+  filterBtn: {
+    padding: "8px 14px",
+    borderRadius: "20px",
+    border: "1px solid #d1d5db",
+    background: "#fff",
+    cursor: "pointer",
+  },
+  filterActive: {
+    background: "#1e88e5",
+    color: "#fff",
+    borderColor: "#1e88e5",
+  },
+  tableWrapper: {
+    height: "calc(100vh - 200px)",
+    background: "#fff",
+    borderRadius: "10px",
+    boxShadow: "0 10px 30px rgba(0,0,0,0.08)",
+    overflow: "auto",
+  },
+  table: {
+    width: "100%",
+    borderCollapse: "collapse",
+  },
+  name: {
+    fontWeight: 600,
+    color: "#0b3c91",
+  },
+  badge: {
+    padding: "6px 14px",
+    borderRadius: "20px",
+    fontSize: "13px",
+    fontWeight: 600,
+  },
+  progressBg: {
+    width: "110px",
+    height: "8px",
+    background: "#e5e7eb",
+    borderRadius: "6px",
     display: "inline-block",
     marginRight: "8px",
   },
-  grid: {
-    display: "grid",
-    gridTemplateColumns: "repeat(auto-fill, minmax(320px, 1fr))",
-    gap: "25px",
-  },
-  card: {
-    backgroundColor: "white",
-    borderRadius: "10px",
-    padding: "20px",
-    boxShadow: "0 4px 12px rgba(0,0,0,0.05)",
-    transition: "transform 0.2s",
-  },
-  cardHeader: {
-    marginBottom: "10px",
-  },
-  patientName: {
-    margin: "0 0 15px 0",
-    color: "#003a8c",
-    fontSize: "1.4rem",
-  },
-  infoRow: {
-    marginBottom: "8px",
-    color: "#555",
-    fontSize: "0.95rem",
-  },
-  progressBarBg: {
-    height: "10px",
-    width: "100%",
-    backgroundColor: "#f0f0f0",
-    borderRadius: "5px",
-    overflow: "hidden",
-  },
-  progressBarFill: {
+  progressFill: {
     height: "100%",
-    borderRadius: "5px",
-    transition: "width 0.5s ease-in-out",
-  },
-  actionButton: {
-    marginTop: "20px",
-    width: "100%",
-    padding: "10px",
-    backgroundColor: "#1890ff",
-    color: "white",
-    border: "none",
+    background: "#3b82f6",
     borderRadius: "6px",
-    fontWeight: "600",
+    transition: "width 0.6s ease",
+  },
+  percent: {
+    fontSize: "13px",
+    fontWeight: 600,
+  },
+  actionBtn: {
+    background: "#1e88e5",
+    color: "#fff",
+    border: "none",
+    padding: "8px 14px",
+    borderRadius: "8px",
+    fontWeight: 600,
     cursor: "pointer",
-    transition: "background 0.2s",
+    transition: "all 0.2s ease",
+  },
+  center: {
+    height: "100vh",
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
   },
 };
 

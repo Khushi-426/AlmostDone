@@ -3,218 +3,166 @@ import { useAuth } from './context/AuthContext';
 import { useNavigate } from 'react-router-dom'; 
 import TherapistAlertsPanel from './components/TherapistAlertsPanel.jsx';
 import axios from 'axios';
+import { motion } from 'framer-motion';
+import { 
+  Users, Activity, BookOpen, ClipboardList, 
+  Bell, BarChart3, LogOut, ChevronRight, AlertTriangle, ShieldCheck 
+} from 'lucide-react';
 
 const TherapistDashboard = () => {
-  // 1. Get logout function from AuthContext
   const { user, logout } = useAuth();
   const navigate = useNavigate(); 
-  
   const [stats, setStats] = useState({
     totalPatients: 0,
     activeProtocols: 0,
+    highRiskCount: 0,
     newPatientsLastMonth: 0
   });
 
-  // FETCH DASHBOARD STATS
   useEffect(() => {
     const fetchStats = async () => {
       try {
         const res = await axios.get('http://localhost:5001/api/therapist/patients');
-        const patients = res.data.patients; 
-        
-        if (!patients) return;
-
-        const total = patients.length;
-        const active = patients.filter(p => p.hasActiveProtocol).length || 0;
-        
+        const patients = res.data.patients || [];
+        const active = patients.filter(p => p.hasActiveProtocol).length;
+        const highRisk = patients.filter(p => p.status === 'High Risk').length;
         const oneMonthAgo = new Date();
         oneMonthAgo.setMonth(oneMonthAgo.getMonth() - 1);
         const newPatients = patients.filter(p => new Date(p.date_joined) >= oneMonthAgo).length;
 
-        setStats({ totalPatients: total, activeProtocols: active, newPatientsLastMonth: newPatients });
-
+        setStats({ 
+            totalPatients: patients.length, 
+            activeProtocols: active, 
+            highRiskCount: highRisk,
+            newPatientsLastMonth: newPatients 
+        });
       } catch (error) {
         console.error("Error fetching stats:", error);
       }
     };
-
     fetchStats();
   }, [user]);
 
-  const displayName = user?.name || user?.email || 'Therapist';
+  const handleLogout = () => { if (logout) logout(); navigate('/auth/login'); };
 
-  // --- LOGOUT HANDLER ---
-  const handleLogout = () => {
-    // 1. Clear Auth State
-    if (logout) logout(); 
-    // 2. Redirect to Login Page
-    navigate('/auth/login'); 
-  };
-
-  // Navigation Handlers
-  const handleGoToPatientMonitoring = () => navigate('/therapist/monitoring');
-  const handleGoToLibrary = () => navigate('/therapist/library');
-  const handleGoToProtocolManager = () => navigate('/therapist/protocols');
-  const handleGoToNotifications = () => navigate('/therapist/notifications');
-  const handleGoToAnalytics = () => navigate('/therapist/analytics');
+  const actionZones = [
+    { title: 'Patient Monitoring', label: 'Review Compliance & Risk', icon: <Users size={22}/>, path: '/therapist/monitoring', desc: 'Real-time adherence & status tracking', border: '#6366F1' },
+    { title: 'Advanced Analytics', label: 'AI Recovery Insights', icon: <BarChart3 size={22}/>, path: '/therapist/analytics', desc: 'Neural forecasting of patient progress', border: '#6366F1' },
+    { title: 'Exercise Library', label: 'Clinical Movement Repository', icon: <BookOpen size={22}/>, path: '/therapist/library', desc: 'Standardized therapeutic movements', border: '#0F172A' },
+    { title: 'Protocol Manager', label: 'Treatment Design & Assignment', icon: <ClipboardList size={22}/>, path: '/therapist/protocols', desc: 'Prescribe recovery pathways', border: '#0F172A' },
+  ];
 
   return (
-    <div style={styles.dashboardContainer}>
-      {/* HEADER SECTION WITH LOGOUT */}
-      <div style={styles.headerRow}>
-        <div>
-            <h1 style={styles.headerText}>Welcome, Dr. {displayName}</h1>
-            <p style={{ fontSize: '1.1rem', color: '#555' }}>Dashboard Summary & Quick Actions</p>
-        </div>
-        
-        {/* LOGOUT BUTTON */}
-        <button onClick={handleLogout} style={styles.logoutButton}>
-            Logout / Switch User
-        </button>
-      </div>
+    <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} style={styles.container}>
+      {/* AI GRID OVERLAY LAYER */}
+      <div style={styles.gridOverlay}></div>
 
-      {/* Top Section: Alerts Panel + Quick Stats */}
-      <div style={styles.topSection}>
-        <div style={{ flex: '2', minWidth: '300px' }}>
-             <TherapistAlertsPanel />
-        </div>
-        
-        <div style={styles.quickStatsCard}>
-            <h2 style={{color: '#0050b3', margin: '0 0 10px 0'}}>Total Patients</h2>
-            <p style={{fontSize: '3.5rem', margin: '0', fontWeight: 'bold', color: '#333'}}>
-                {stats.totalPatients}
-            </p>
-            <div style={{marginTop: '15px'}}>
-                <p style={{color: '#52c41a', fontWeight: 'bold', margin: '5px 0'}}>
-                    {stats.activeProtocols} Active Protocols
-                </p>
-                <p style={{color: '#888', fontSize: '0.9rem', margin: '0'}}>
-                    +{stats.newPatientsLastMonth} new this month
-                </p>
+      <div style={styles.contentWrapper}>
+        <header style={styles.header}>
+          <div>
+            <div style={styles.badge}><span style={styles.pulse}></span> Live Monitoring Active</div>
+            <h1 style={styles.headerTitle}>Clinical Command Center</h1>
+            <p style={styles.headerSubtitle}>Lead Clinician: Dr. {user?.name || 'Therapist'}</p>
+          </div>
+          <button onClick={handleLogout} style={styles.logoutBtn}>
+            <LogOut size={16} style={{marginRight: '8px'}}/> Logout
+          </button>
+        </header>
+
+        <section style={styles.sectionWrapper}>
+          <div style={styles.statsGrid}>
+            <StatCard label="Total Patient Load" value={stats.totalPatients} icon={<Users color="#6366F1"/>} subText="Total onboarded population" border="#6366F1" />
+            <StatCard label="Critical Risk Cases" value={stats.highRiskCount} icon={<AlertTriangle color="#EF4444"/>} color="#EF4444" subText="Urgent intervention required" border={stats.highRiskCount > 0 ? "#EF4444" : "#22C55E"} isRisk={stats.highRiskCount > 0} />
+            <StatCard label="Active Protocols" value={stats.activeProtocols} icon={<Activity color="#14B8A6"/>} subText="In-progress treatment plans" border="#22C55E" />
+            <StatCard label="System Integrity" value="Stable" icon={<ShieldCheck color="#0F172A"/>} subText="AI Monitoring active" border="#0F172A" />
+          </div>
+        </section>
+
+        <div style={styles.mainLayout}>
+          <div style={styles.alertsWrapper}>
+            <TherapistAlertsPanel />
+          </div>
+
+          <div style={styles.actionsWrapper}>
+            <div style={styles.actionGrid}>
+              {actionZones.map((zone, idx) => (
+                <motion.div key={idx} whileHover={{ y: -4, boxShadow: '0 8px 25px rgba(15, 23, 42, 0.1)' }} style={{...styles.actionCard, borderTop: `4px solid ${zone.border}`}} onClick={() => navigate(zone.path)}>
+                  <div style={styles.actionIconWrapper}>{zone.icon}</div>
+                  <div style={{flex: 1}}>
+                    <span style={styles.actionLabel}>{zone.label}</span>
+                    <h3 style={styles.actionTitle}>{zone.title}</h3>
+                    <p style={styles.actionDesc}>{zone.desc}</p>
+                  </div>
+                  <ChevronRight size={20} color="#CBD5E1" />
+                </motion.div>
+              ))}
             </div>
+          </div>
         </div>
       </div>
-
-      {/* Main Grid */}
-      <div style={styles.mainGrid}>
-        
-        <div style={styles.cardStyle}>
-          <h2 style={styles.cardHeaderStyle}>Patient Monitoring</h2>
-          <p>Review compliance, risk status, and session data for all assigned patients.</p>
-          <button style={styles.buttonStyle} onClick={handleGoToPatientMonitoring}>Go to Monitoring</button>
-        </div>
-
-        <div style={styles.cardStyle}>
-          <h2 style={styles.cardHeaderStyle}>Advanced Analytics</h2>
-          <p>Visualize Quality Score trends, functional improvements, and AI forecasts.</p>
-          <button style={styles.buttonStyle} onClick={handleGoToAnalytics}>View Analytics</button>
-        </div>
-
-        <div style={styles.cardStyle}>
-          <h2 style={styles.cardHeaderStyle}>Exercise Library</h2>
-          <p>Create, categorize, and manage the core exercises used in protocols.</p>
-          <button style={styles.buttonStyle} onClick={handleGoToLibrary}>Manage Library</button>
-        </div>
-
-        <div style={styles.cardStyle}>
-          <h2 style={styles.cardHeaderStyle}>Protocols & Assignment</h2>
-          <p>Define sets, reps, and difficulty, then assign protocols to patients.</p>
-          <button style={styles.buttonStyle} onClick={handleGoToProtocolManager}>Manage Protocols</button>
-        </div>
-        
-        <div style={styles.cardStyle}>
-          <h2 style={styles.cardHeaderStyle}>Notifications Log</h2>
-          <p>View automated reminders, confirmations, and low adherence alerts.</p>
-          <button style={styles.buttonStyle} onClick={handleGoToNotifications}>View Notifications</button>
-        </div>
-      </div>
-    </div>
+    </motion.div>
   );
 };
 
-// --- Styles ---
+const StatCard = ({ label, value, icon, subText, color = '#111827', border, isRisk = false }) => (
+  <motion.div style={{
+    ...styles.statCard, 
+    borderTop: `4px solid ${border}`,
+    backgroundColor: isRisk ? 'rgba(239, 68, 68, 0.04)' : '#FFFFFF'
+  }}>
+    <div style={styles.statTop}><span style={styles.statLabel}>{label}</span><div style={styles.statIconBg}>{icon}</div></div>
+    <h2 style={{...styles.statValue, color}}>{value}</h2>
+    <p style={styles.statSubText}>{subText}</p>
+  </motion.div>
+);
+
 const styles = {
-    dashboardContainer: { 
-        padding: '30px', 
-        backgroundColor: '#f0f2f5', 
-        minHeight: '100vh',
-        fontFamily: "'Inter', sans-serif",
-    },
-    headerRow: {
-        display: 'flex',
-        justifyContent: 'space-between',
-        alignItems: 'flex-start',
-        marginBottom: '30px',
-        borderBottom: '2px solid #e2e8f0',
-        paddingBottom: '20px'
-    },
-    headerText: { 
-        color: '#1a365d', 
-        fontSize: '2.2rem',
-        marginBottom: '5px',
-        fontWeight: '700',
-        margin: 0
-    },
-    logoutButton: {
-        padding: '10px 20px',
-        backgroundColor: '#fff',
-        color: '#d32f2f',
-        border: '2px solid #d32f2f',
-        borderRadius: '8px',
-        fontWeight: 'bold',
-        cursor: 'pointer',
-        transition: '0.2s',
-        fontSize: '0.9rem'
-    },
-    topSection: {
-        display: 'flex',
-        flexWrap: 'wrap', 
-        gap: '20px',
-        marginBottom: '40px'
-    },
-    quickStatsCard: {
-        backgroundColor: 'white',
-        padding: '30px',
-        borderRadius: '16px',
-        boxShadow: '0 4px 20px rgba(0,0,0,0.05)',
-        flex: '1 1 250px', 
-        textAlign: 'center',
-        display: 'flex',
-        flexDirection: 'column',
-        justifyContent: 'center'
-    },
-    mainGrid: { 
-        display: 'grid', 
-        gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))', 
-        gap: '30px', 
-    },
-    cardStyle: { 
-        backgroundColor: 'white', 
-        padding: '30px', 
-        borderRadius: '16px', 
-        boxShadow: '0 4px 6px rgba(0,0,0,0.02)',
-        border: '1px solid #e2e8f0',
-        display: 'flex',
-        flexDirection: 'column',
-        justifyContent: 'space-between'
-    },
-    cardHeaderStyle: { 
-        marginBottom: '15px', 
-        color: '#2c5282',
-        fontSize: '1.5rem',
-        fontWeight: '600'
-    },
-    buttonStyle: { 
-        padding: '12px 20px', 
-        backgroundColor: '#3182ce', 
-        color: 'white', 
-        border: 'none', 
-        borderRadius: '8px', 
-        cursor: 'pointer', 
-        marginTop: '20px',
-        fontWeight: '600',
-        width: '100%',
-    }
+  container: { 
+    backgroundColor: '#F3F6FB', 
+    minHeight: '100vh', 
+    position: 'relative', 
+    overflowX: 'hidden' 
+  },
+  // Technical Grid Pattern
+  gridOverlay: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    backgroundImage: `radial-gradient(rgba(99, 102, 241, 0.04) 1px, transparent 0)`,
+    backgroundSize: '24px 24px',
+    pointerEvents: 'none',
+    zIndex: 0
+  },
+  contentWrapper: {
+    position: 'relative',
+    zIndex: 1,
+    padding: '40px'
+  },
+  header: { display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', marginBottom: '40px' },
+  badge: { backgroundColor: '#E0F2FE', color: '#0369A1', padding: '4px 12px', borderRadius: '20px', fontSize: '0.75rem', fontWeight: '700', marginBottom: '12px', display: 'inline-flex', alignItems: 'center', gap: '6px' },
+  pulse: { width: '8px', height: '8px', backgroundColor: '#0EA5E9', borderRadius: '50%' },
+  headerTitle: { color: '#0F172A', fontSize: '2.5rem', fontWeight: '800', margin: 0 },
+  headerSubtitle: { color: '#64748B', fontSize: '1.1rem', margin: '4px 0 0 0' },
+  logoutBtn: { display: 'flex', alignItems: 'center', padding: '10px 20px', backgroundColor: '#FFF', border: '1px solid #E2E8F0', borderRadius: '12px', color: '#64748B', cursor: 'pointer' },
+  sectionWrapper: { backgroundColor: '#EEF2F7', padding: '24px', borderRadius: '20px', marginBottom: '40px', boxShadow: 'inset 0 2px 4px rgba(0,0,0,0.02)' },
+  statsGrid: { display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))', gap: '20px' },
+  statCard: { backgroundColor: '#FFFFFF', padding: '24px', borderRadius: '16px', boxShadow: '0 6px 20px rgba(15, 23, 42, 0.06)' },
+  statTop: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' },
+  statLabel: { color: '#64748B', fontSize: '0.85rem', fontWeight: '700', textTransform: 'uppercase' },
+  statIconBg: { backgroundColor: '#F1F5F9', padding: '10px', borderRadius: '12px' },
+  statValue: { fontSize: '2.8rem', fontWeight: '800', margin: 0 },
+  statSubText: { color: '#94A3B8', fontSize: '0.85rem', marginTop: '10px', margin: 0 },
+  mainLayout: { display: 'grid', gridTemplateColumns: '1fr 1.6fr', gap: '32px' },
+  alertsWrapper: { backgroundColor: '#EEF2F7', padding: '20px', borderRadius: '20px', height: 'fit-content' },
+  actionsWrapper: { backgroundColor: '#EEF2F7', padding: '20px', borderRadius: '20px' },
+  actionGrid: { display: 'grid', gridTemplateColumns: '1fr', gap: '16px' },
+  actionCard: { backgroundColor: '#FFFFFF', padding: '24px', borderRadius: '16px', display: 'flex', alignItems: 'center', gap: '24px', cursor: 'pointer', boxShadow: '0 6px 20px rgba(15, 23, 42, 0.06)' },
+  actionIconWrapper: { color: '#6366F1', backgroundColor: '#EEF2FF', padding: '14px', borderRadius: '14px' },
+  actionLabel: { color: '#14B8A6', fontSize: '0.75rem', fontWeight: '800', textTransform: 'uppercase' },
+  actionTitle: { color: '#0F172A', fontSize: '1.3rem', fontWeight: '700', margin: '2px 0' },
+  actionDesc: { color: '#64748B', fontSize: '0.95rem', margin: 0 },
 };
 
 export default TherapistDashboard;
